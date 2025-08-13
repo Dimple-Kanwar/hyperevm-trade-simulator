@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/app/components/ui/button";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-} from "@/components/ui/card";
+} from "@/app/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useAuthModal } from "@account-kit/react";
 export default function LoginPage() {

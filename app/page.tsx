@@ -1,11 +1,10 @@
 "use client";
 
 import { useSignerStatus } from "@account-kit/react";
-import UserInfoCard from "./components/user-info-card";
 import NftMintCard from "./components/nft-mint-card";
 import LoginCard from "./components/login-card";
-import Header from "./components/header";
-import LearnMore from "./components/learn-more";
+import Header from "./components/header/Header";
+// import TransactionSimulator from "./components/TransactionSimulator";
 
 export default function Home() {
   const signerStatus = useSignerStatus();
@@ -18,8 +17,7 @@ export default function Home() {
           {signerStatus.isConnected ? (
             <div className="grid gap-8 md:grid-cols-[1fr_2fr]">
               <div className="flex flex-col gap-8">
-                <UserInfoCard />
-                <LearnMore />
+                {/* <TransactionSimulator /> */}
               </div>
               <NftMintCard />
             </div>
