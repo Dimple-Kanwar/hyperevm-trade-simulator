@@ -3,8 +3,61 @@ import {
   cookieStorage,
   createConfig,
 } from "@account-kit/react";
-import { alchemy, arbitrumSepolia } from "@account-kit/infra";
+import {
+  alchemy,
+  arbitrumSepolia,
+  defineAlchemyChain,
+} from "@account-kit/infra";
 import { QueryClient } from "@tanstack/react-query";
+import { defineChain } from "viem";
+
+export const hype = defineChain({
+  id: 999,
+  name: "Hype",
+  nativeCurrency: {
+    decimals: 18,
+    name: "Hype",
+    symbol: "HYPE",
+  },
+  rpcUrls: {
+    default: {
+      http: ["https://hyperliquid-mainnet.g.alchemy.com/v2/API_KEY"],
+      webSocket: ["wss://hyperliquid-mainnet.g.alchemy.com/v2/API_KEY"],
+    },
+  },
+  blockExplorers: {
+    default: { name: "Explorer", url: "https://hyperevmscan.io/" },
+  },
+});
+
+// export const hype_testnet = defineChain({
+//   id: 998,
+//   name: "Hype",
+//   nativeCurrency: {
+//     decimals: 18,
+//     name: "Hype",
+//     symbol: "HYPE",
+//   },
+//   rpcUrls: {
+//     default: {
+//       http: ["https://rpc.hyperliquid-testnet.xyz/evm"],
+//       webSocket: ["wss://api.hyperliquid-testnet.xyz/ws"],
+//     },
+//   },
+//   blockExplorers: {
+//     default: { name: "Explorer", url: "https://testnet.purrsec.com/" },
+//   },
+// });
+
+const chain = defineAlchemyChain({
+  chain: hype,
+  rpcBaseUrl: `https://hyperliquid-mainnet.g.alchemy.com/v2/API_KEY`,
+});
+
+// const testnet_chain = defineAlchemyChain({
+//   chain: hype_testnet,
+//   rpcBaseUrl: "",
+// });
 
 const API_KEY = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
 if (!API_KEY) {
@@ -26,6 +79,11 @@ const uiConfig: AlchemyAccountsUIConfig = {
         { type: "social", authProviderId: "google", mode: "popup" },
         { type: "social", authProviderId: "facebook", mode: "popup" },
       ],
+      [
+        {
+          type: "external_wallets",
+        },
+      ],
     ],
     addPasskeyOnSignup: false,
   },
@@ -35,7 +93,7 @@ export const config = createConfig(
   {
     transport: alchemy({ apiKey: API_KEY }),
     // Note: This quickstart is configured for Arbitrum Sepolia.
-    chain: arbitrumSepolia,
+    chain: chain,
     ssr: true, // more about ssr: https://www.alchemy.com/docs/wallets/react/ssr
     storage: cookieStorage, // more about persisting state with cookies: https://www.alchemy.com/docs/wallets/react/ssr#persisting-the-account-state
     enablePopupOauth: true, // must be set to "true" if you plan on using popup rather than redirect in the social login flow
