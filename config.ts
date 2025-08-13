@@ -11,53 +11,7 @@ import {
 import { QueryClient } from "@tanstack/react-query";
 import { defineChain } from "viem";
 
-export const hype = defineChain({
-  id: 999,
-  name: "Hype",
-  nativeCurrency: {
-    decimals: 18,
-    name: "Hype",
-    symbol: "HYPE",
-  },
-  rpcUrls: {
-    default: {
-      http: ["https://hyperliquid-mainnet.g.alchemy.com/v2/API_KEY"],
-      webSocket: ["wss://hyperliquid-mainnet.g.alchemy.com/v2/API_KEY"],
-    },
-  },
-  blockExplorers: {
-    default: { name: "Explorer", url: "https://hyperevmscan.io/" },
-  },
-});
 
-// export const hype_testnet = defineChain({
-//   id: 998,
-//   name: "Hype",
-//   nativeCurrency: {
-//     decimals: 18,
-//     name: "Hype",
-//     symbol: "HYPE",
-//   },
-//   rpcUrls: {
-//     default: {
-//       http: ["https://rpc.hyperliquid-testnet.xyz/evm"],
-//       webSocket: ["wss://api.hyperliquid-testnet.xyz/ws"],
-//     },
-//   },
-//   blockExplorers: {
-//     default: { name: "Explorer", url: "https://testnet.purrsec.com/" },
-//   },
-// });
-
-const chain = defineAlchemyChain({
-  chain: hype,
-  rpcBaseUrl: `https://hyperliquid-mainnet.g.alchemy.com/v2/API_KEY`,
-});
-
-// const testnet_chain = defineAlchemyChain({
-//   chain: hype_testnet,
-//   rpcBaseUrl: "",
-// });
 
 const API_KEY = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
 if (!API_KEY) {
@@ -68,6 +22,56 @@ const SPONSORSHIP_POLICY_ID = process.env.NEXT_PUBLIC_ALCHEMY_POLICY_ID;
 if (!SPONSORSHIP_POLICY_ID) {
   throw new Error("NEXT_PUBLIC_ALCHEMY_POLICY_ID is not set");
 }
+
+export const hype = defineChain({
+  id: 999,
+  name: "Hype",
+  nativeCurrency: {
+    decimals: 18,
+    name: "Hype",
+    symbol: "HYPE",
+  },
+  rpcUrls: {
+    default: {
+      http: [`https://hyperliquid-mainnet.g.alchemy.com/v2/${API_KEY}`],
+      webSocket: [`wss://hyperliquid-mainnet.g.alchemy.com/v2/${API_KEY}`],
+    },
+  },
+  blockExplorers: {
+    default: { name: "Explorer", url: "https://hyperevmscan.io/" },
+  },
+});
+
+export const hype_testnet = defineChain({
+  id: 998,
+  name: "Hype",
+  nativeCurrency: {
+    decimals: 18,
+    name: "Hype",
+    symbol: "HYPE",
+  },
+  rpcUrls: {
+    default: {
+      http: ["https://rpc.hyperliquid-testnet.xyz/evm"],
+      webSocket: ["wss://api.hyperliquid-testnet.xyz/ws"],
+    },
+  },
+  blockExplorers: {
+    default: { name: "Explorer", url: "https://testnet.purrsec.com/" },
+  },
+});
+
+
+// const testnet_chain = defineAlchemyChain({
+//   chain: hype_testnet,
+//   rpcBaseUrl: "",
+// });
+
+const chain = defineAlchemyChain({
+  chain: hype,
+  rpcBaseUrl: `https://hyperliquid-mainnet.g.alchemy.com/v2/${API_KEY}`,
+});
+
 
 const uiConfig: AlchemyAccountsUIConfig = {
   illustrationStyle: "outline",
@@ -86,6 +90,7 @@ const uiConfig: AlchemyAccountsUIConfig = {
       ],
     ],
     addPasskeyOnSignup: false,
+    hideSignInText: false
   },
 };
 
