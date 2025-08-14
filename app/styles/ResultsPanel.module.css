@@ -1,0 +1,6 @@
+.wrap{padding:12px;background:#060606;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
+.empty{padding:12px;color:#888}
+.summary{display:flex;gap:18px;align-items:center;margin-bottom:10px}
+.error{color:#ff8080}
+.section{margin-top:12px}
+.pre{background:#0b0b0b;padding:10px;border-radius:6px;border:1px solid rgba(255,255,255,0.03);overflow:auto;max-height:260px}

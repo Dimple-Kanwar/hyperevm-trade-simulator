@@ -86,12 +86,16 @@ const uiConfig: AlchemyAccountsUIConfig = {
       [
         {
           type: "external_wallets",
+          // walletConnect: { projectId: "3fcc6bba6f1de962d911bb5b5c3dba68" },
         },
       ],
     ],
     addPasskeyOnSignup: false,
-    hideSignInText: false
+    onAuthSuccess: () => {
+      console.log(" auth connected");
+    }
   },
+
 };
 
 export const config = createConfig(

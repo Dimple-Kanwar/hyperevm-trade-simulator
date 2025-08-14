@@ -1,0 +1,6 @@
+.wrapper{display:flex;flex-direction:column;gap:8px}
+.label{font-weight:600}
+.row{display:flex;gap:8px;align-items:center}
+.input{flex:1;padding:8px;border-radius:6px;background:#0f0f0f;border:1px solid rgba(255,255,255,0.04);color:#eee}
+.del{background:#2b2b2b;border:none;padding:6px;border-radius:6px;color:#fff}
+.add{margin-top:8px;background:transparent;color:#c59cf0;border:1px solid rgba(197,156,240,0.2);padding:8px;border-radius:6px}

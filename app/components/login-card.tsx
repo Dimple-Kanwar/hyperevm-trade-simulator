@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import {
@@ -11,7 +11,7 @@ import {
   CardContent,
 } from "@/app/components/ui/card";
 import { cn } from "@/lib/utils";
-import { useAuthModal } from "@account-kit/react";
+import { useAuthModal, useConnect, useSignerStatus } from "@account-kit/react";
 export default function LoginPage() {
   const { openAuthModal } = useAuthModal();
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -31,12 +31,12 @@ export default function LoginPage() {
             "dark:from-white dark:to-gray-300 bg-clip-text text-transparent"
           )}
         >
-          Smart Wallets
+          HyperEVM Transaction Simulator
         </CardTitle>
         <CardDescription
           className={cn("text-base text-gray-600 dark:text-gray-400")}
         >
-          Experience seamless onchain UX with smart wallets. Click log in to
+          Simulate and analyze HyperEVM transactions off-chain with precision and insights. Click log in to
           continue.
         </CardDescription>
       </CardHeader>

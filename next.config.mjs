@@ -1,6 +1,7 @@
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  reactStrictMode: true,
   images: {
     remotePatterns: [
       {
@@ -10,20 +11,7 @@ const nextConfig = {
         pathname: "/**",
       },
     ],
-  },
-  // headers: () => {
-  //   return [
-  //     {
-  //       source: "/login",
-  //       headers: [
-  //         {
-  //           key: "Cross-Origin-Embedder-Policy",
-  //           value: "unsafe-none",
-  //         },
-  //       ],
-  //     },
-  //   ];
-  // }
+  }
 };
 
 export default nextConfig;

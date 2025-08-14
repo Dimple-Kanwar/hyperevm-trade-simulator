@@ -1,0 +1,4 @@
+.wrapper{display:flex;flex-direction:column;gap:10px;padding:12px;background:linear-gradient(180deg,#070707,#0b0b0b);border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
+.title{font-size:16px;margin-bottom:4px}
+.label{font-size:13px;color:#ddd}
+.input{background:rgba(255, 255, 255, 0.04);border:1px solid rgba(173, 157, 157, 0.04);padding:9px;border-radius:6px;color:#eee}

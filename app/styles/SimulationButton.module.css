@@ -1,0 +1,5 @@
+.btn{
+  background:#8b2be2;border:none;padding:10px 16px;border-radius:8px;color:white;font-weight:700;
+  box-shadow: 0 6px 18px rgba(139,43,226,0.18);
+}
+.btn[disabled]{opacity:0.6}
