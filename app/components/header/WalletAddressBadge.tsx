@@ -11,7 +11,7 @@ export function WalletAddressBadge() {
   const user = useUser();
   const client = config._internal.wagmiConfig.getClient();
   const address = user?.address;
-  console.log({ address });
+  // console.log({ address });
   const chain = client.chain;
 
   const handleCopy = () => {

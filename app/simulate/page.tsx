@@ -4,13 +4,14 @@ import { useState, useEffect, SetStateAction } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
-import { useSmartAccountClient } from '@account-kit/react';
-import { encodeFunctionData, parseEther, formatEther, AccessList, Hex, numberToHex, BlockTag, BlockIdentifier, BlockNumber, parseGwei, keccak256, toHex } from 'viem';
+import { useSmartAccountClient, useUser } from '@account-kit/react';
+import { encodeFunctionData, parseEther, formatEther, AccessList, Hex, numberToHex, BlockTag, BlockIdentifier, BlockNumber, parseGwei, keccak256, toHex, createPublicClient, http } from 'viem';
 import { Input } from '@/app/components/ui/Input';
 import { Textarea } from '@/app/components/ui/Textarea';
 import { TxSimulationParams } from '@/app/types/TxSimulation';
 import Header from '@/app/components/header/Header';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
+import { config } from '@/config';
 
 // Type for parsed function
 type ParsedFunction = {
@@ -25,7 +26,7 @@ export default function CustomSimulationPage() {
     const [error, setError] = useState<string | null>(null);
     const [isSimulating, setIsSimulating] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
-
+    const user = useUser();
     // Form state
     const [contractAddress, setContractAddress] = useState('');
     const [abi, setAbi] = useState('');
@@ -33,17 +34,124 @@ export default function CustomSimulationPage() {
     const [selectedFunction, setSelectedFunction] = useState<string>('');
     const [args, setArgs] = useState<Record<string, string>>({});
     const [from, setFrom] = useState('');
+    const [to, setTo] = useState('');
     const [value, setValue] = useState('');
-    const [gasLimit, setGasLimit] = useState('3000000');
-    const [gasPrice, setGasPrice] = useState('10');
-    const [maxFeePerGas, setMaxFeePerGas] = useState<string>("");
+    const [gasLimit, setGasLimit] = useState('');
+    const [gasPrice, setGasPrice] = useState('');
     const [usePendingBlock, setUsePendingBlock] = useState(true);
-    const [blockNumber, setBlockNumber] = useState('');
+    const [blockNumber, setBlockNumber] = useState<string>('');
+    const [currentBlock, setCurrentBlock] = useState<number | null>(null);
+
+    // Create public client for network calls
+    const publicClient = config._internal.wagmiConfig.getClient();
+
+    // estimate gas limit  for the transaction
+    const estimateGas = async (tx: any) => {
+        // Estimate gas for a simple transfer (fallback)
+        if (!gasLimit) {
+            try {
+                const estimate = await publicClient.request({
+                    "id": 1,
+                    "jsonrpc": "2.0",
+                    "method": "eth_estimateGas",
+                    "params": tx // should be an array
+                });
+                console.log({ estimate });
+                console.log({ gasLimit: (Number(estimate) * 1.2).toFixed(0) });
+                setGasLimit((Number(estimate) * 1.2).toFixed(0)); // Add 20% buffer
+            } catch (err) {
+                console.log("Error while estimating gas for the transaction.Error: ", err);
+                console.log({ gasLimit: 21000 });
+                setGasLimit('21000'); // Fallback
+            }
+        }
+    }
+
+    // Fetch current block number
+    useEffect(() => {
+        if (!publicClient) return;
+
+        const fetchBlock = async () => {
+            try {
+                const block = await publicClient.request({
+                    "id": 1,
+                    "jsonrpc": "2.0",
+                    "method": "eth_blockNumber"
+                });
+                const number = Number(block);
+                setCurrentBlock(number);
+
+                // Auto-fill block number if not using pending
+                if (!usePendingBlock && !blockNumber) {
+                    setBlockNumber(number.toString());
+                }
+            } catch (err) {
+                console.error('Failed to fetch block number:', err);
+            }
+        };
+
+        fetchBlock();
+        const interval = setInterval(fetchBlock, 15_000); // Update every 15s
+        return () => clearInterval(interval);
+    }, [publicClient, usePendingBlock, blockNumber]);
+
+    // console.log({ currentBlock });
+
+    // Fetch gas price
+    useEffect(() => {
+        if (!publicClient || !client?.account?.address) return;
+
+        const fetchGasPrice = async () => {
+            try {
+                // Fetch gas price
+                const feeData = await publicClient.request({
+                    "id": 1,
+                    "jsonrpc": "2.0",
+                    "method": "eth_gasPrice"
+                });
+                console.log({ feeData });
+                const gwei = formatEther(BigInt(feeData), 'gwei');
+                console.log({ gwei });
+                if (!gasPrice) setGasPrice(gwei);
+            } catch (err: any) {
+                console.log("Error while fetching gas price.Error: ", err);
+            }
+        }
+
+        fetchGasPrice();
+    }, [publicClient, client?.account?.address, gasPrice]);
+
+    console.log({ gasPrice });
+
+    // Set default from address
+    useEffect(() => {
+        console.log("connected account: ", user?.address);
+        console.log("from account: ", from);
+        if (user?.address && !from) {
+            setFrom(user?.address);
+        }
+    }, [client?.account?.address, from]);
+
+
+    // When "Use Pending Block" is toggled
+    const handleUsePendingBlockChange = (checked: boolean) => {
+        setUsePendingBlock(checked);
+        if (!checked && currentBlock && !blockNumber) {
+            setBlockNumber(currentBlock.toString());
+        }
+    };
+
+    // Reset block number if user unchecks and no value
+    useEffect(() => {
+        if (!usePendingBlock && currentBlock && !blockNumber) {
+            setBlockNumber(currentBlock.toString());
+        }
+    }, [usePendingBlock, currentBlock, blockNumber]);
 
     // Prevent hydration mismatch: only render results on client
     const [isClient, setIsClient] = useState(false);
     useEffect(() => {
-        setIsClient(true);
+        if (publicClient) setIsClient(true);
     }, []);
 
     // Parse ABI and extract functions whenever ABI changes
@@ -130,10 +238,7 @@ export default function CustomSimulationPage() {
         }
     };
 
-    const handleCopy = () => {
 
-
-    };
     // Copy function selector to clipboard
     const handleCopySelector = () => {
         if (!currentFunction) return;
@@ -178,19 +283,24 @@ export default function CustomSimulationPage() {
             const fromAddress = (from || account) as `0x${string}`;
             if (!fromAddress) throw new Error('From address is required');
 
+            const toAddress = (to || contractAddress) as `0x${string}`;
+            if (toAddress) throw new Error("To address is required");
+
             const tx: TxSimulationParams = {
                 from: fromAddress,
-                to: contractAddress as `0x${string}`,
-                data: encodeFunctionData({
+                to: toAddress,
+                data: contractAddress ? encodeFunctionData({
                     abi: parsedAbi,
                     functionName: selectedFunction,
                     args: orderedArgs,
-                }),
+                }) : undefined,
                 value: value ? numberToHex(parseEther(value)) : undefined,
                 gas: gasLimit ? numberToHex(BigInt(gasLimit)) : undefined,
             };
 
+            console.log({ tx });
             const block: BlockTag | `0x${string}` = usePendingBlock ? 'pending' : blockNumber ? numberToHex(BigInt(blockNumber)) : 'latest';
+            console.log({ block });
 
             // 🔧 Real Simulation: debug_traceCall
             let trace;
@@ -400,31 +510,65 @@ export default function CustomSimulationPage() {
                                 <Checkbox
                                     id="use-pending"
                                     checked={usePendingBlock}
-                                    onCheckedChange={(checked: any) => setUsePendingBlock(!!checked)}
+                                    onCheckedChange={handleUsePendingBlockChange}
                                 />
                                 <label htmlFor="use-pending" className="text-sm">
                                     Use Pending Block
                                 </label>
                             </div>
 
-                            {!usePendingBlock && (
-                                <div>
-                                    <label className="text-sm font-medium">Block Number</label>
-                                    <Input
-                                        type="number"
-                                        placeholder="123456"
-                                        value={blockNumber}
-                                        onChange={(e: { target: { value: SetStateAction<string>; }; }) => setBlockNumber(e.target.value)}
-                                    />
-                                </div>
-                            )}
+                            <div className="flex items-center justify-between">
+                                <label className="text-sm font-medium">Block Number</label>
+                                {currentBlock && (
+                                    <span className="text-xs text-muted-foreground">
+                                        Current Block: {currentBlock}
+                                    </span>
+                                )}
+                            </div>
+
+                            <Input
+                                type="number"
+                                placeholder="123456"
+                                value={blockNumber}
+                                disabled={usePendingBlock}
+                                onChange={(e) => setBlockNumber(e.target.value)}
+                            />
 
                             <div>
                                 <label className="text-sm font-medium">From Address</label>
                                 <Input
                                     placeholder="0x..."
                                     value={from}
-                                    onChange={(e: { target: { value: SetStateAction<string>; }; }) => setFrom(e.target.value)}
+                                    onChange={(e) => setFrom(e.target.value)}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-sm font-medium">To Address</label>
+                                <Input
+                                    placeholder="0x..."
+                                    value={to}
+                                    onChange={(e) => setTo(e.target.value)}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-sm font-medium">Gas Limit</label>
+                                <Input
+                                    type="number"
+                                    value={gasLimit}
+                                    onChange={(e) => setGasLimit(e.target.value)}
+                                    placeholder="e.g. 3000000"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium">Gas Price (Gwei)</label>
+                                <Input
+                                    type="number"
+                                    step="0.1"
+                                    value={gasPrice}
+                                    onChange={(e) => setGasPrice(e.target.value)}
+                                    placeholder="e.g. 10"
                                 />
                             </div>
 
@@ -434,24 +578,7 @@ export default function CustomSimulationPage() {
                                     type="number"
                                     placeholder="0"
                                     value={value}
-                                    onChange={(e: { target: { value: SetStateAction<string>; }; }) => setValue(e.target.value)}
-                                />
-                            </div>
-
-                            <div>
-                                <label className="text-sm font-medium">Gas Limit</label>
-                                <Input
-                                    type="number"
-                                    value={gasLimit}
-                                    onChange={(e: { target: { value: SetStateAction<string>; }; }) => setGasLimit(e.target.value)}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium">Gas Price (gwei)</label>
-                                <Input
-                                    type="number"
-                                    value={gasPrice}
-                                    onChange={(e: { target: { value: SetStateAction<string>; }; }) => setGasPrice(e.target.value)}
+                                    onChange={(e) => setValue(e.target.value)}
                                 />
                             </div>
                         </CardContent>
