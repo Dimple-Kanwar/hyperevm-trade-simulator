@@ -5,18 +5,21 @@ import { WalletAddressBadge } from "./WalletAddressBadge";
 import { LogoutButton } from "./LogoutButton";
 import { BalanceDisplay } from "./BalanceDisplay";
 import { ThemeToggle } from "../ThemeToggle";
+import Link from "next/link";
 
 export default function Header() {
   const { isConnected } = useSignerStatus();
-
   if (!isConnected) {
     return (
-      <header className="border-b">
-        <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <Logo />
-          <ThemeToggle isCollapsed={false} />
-        </div>
-      </header>
+      <Link href="/" passHref>
+        <header className="border-b">
+          <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+            <Logo />
+            <ThemeToggle isCollapsed={false} />
+          </div>
+        </header>
+      </Link>
+
     );
   }
 
