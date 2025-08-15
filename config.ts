@@ -5,7 +5,6 @@ import {
 } from "@account-kit/react";
 import {
   alchemy,
-  arbitrumSepolia,
   defineAlchemyChain,
 } from "@account-kit/infra";
 import { QueryClient } from "@tanstack/react-query";
@@ -25,7 +24,7 @@ if (!SPONSORSHIP_POLICY_ID) {
 
 export const hype = defineChain({
   id: 999,
-  name: "Hype",
+  name: "Hype Mainnet",
   nativeCurrency: {
     decimals: 18,
     name: "Hype",
@@ -44,7 +43,7 @@ export const hype = defineChain({
 
 export const hype_testnet = defineChain({
   id: 998,
-  name: "Hype",
+  name: "Hype Testnet",
   nativeCurrency: {
     decimals: 18,
     name: "Hype",
@@ -86,14 +85,10 @@ const uiConfig: AlchemyAccountsUIConfig = {
       [
         {
           type: "external_wallets",
-          // walletConnect: { projectId: "3fcc6bba6f1de962d911bb5b5c3dba68" },
         },
       ],
     ],
-    addPasskeyOnSignup: false,
-    onAuthSuccess: () => {
-      console.log(" auth connected");
-    }
+    addPasskeyOnSignup: false
   },
 
 };

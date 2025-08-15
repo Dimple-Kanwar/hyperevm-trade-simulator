@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import {
@@ -11,11 +11,11 @@ import {
   CardContent,
 } from "@/app/components/ui/card";
 import { cn } from "@/lib/utils";
-import { useAuthModal, useConnect, useSignerStatus } from "@account-kit/react";
+import { useAuthModal } from "@account-kit/react";
 export default function LoginPage() {
   const { openAuthModal } = useAuthModal();
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-
+  
   return (
     <Card
       className={cn(
