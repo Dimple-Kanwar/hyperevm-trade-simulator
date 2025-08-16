@@ -4,8 +4,8 @@ import { useState, useEffect, SetStateAction } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
-import { useSmartAccountClient, useUser } from '@account-kit/react';
-import { encodeFunctionData, parseEther, formatEther, AccessList, Hex, numberToHex, BlockTag, BlockIdentifier, BlockNumber, parseGwei, keccak256, toHex, createPublicClient, http } from 'viem';
+import { useUser } from '@account-kit/react';
+import { encodeFunctionData, parseEther, formatEther, AccessList, Hex, numberToHex, BlockTag, keccak256, toHex } from 'viem';
 import { Input } from '@/app/components/ui/Input';
 import { Textarea } from '@/app/components/ui/Textarea';
 import { TxSimulationParams } from '@/app/types/TxSimulation';
@@ -21,13 +21,14 @@ type ParsedFunction = {
 };
 
 export default function CustomSimulationPage() {
-    const { client } = useSmartAccountClient({});
     const [results, setResults] = useState<any>(null);
     const [error, setError] = useState<string | null>(null);
     const [isSimulating, setIsSimulating] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
     const user = useUser();
+
     // Form state
+    const [isSimulatingContract, setIsSimulatingContract] = useState(false);
     const [contractAddress, setContractAddress] = useState('');
     const [abi, setAbi] = useState('');
     const [functions, setFunctions] = useState<ParsedFunction[]>([]);
@@ -42,15 +43,17 @@ export default function CustomSimulationPage() {
     const [blockNumber, setBlockNumber] = useState<string>('');
     const [currentBlock, setCurrentBlock] = useState<number | null>(null);
 
+    const [accessList, setAccessList] = useState<AccessList>([]);
+    const [gasUsed, setGasUsed] = useState("");
     // Create public client for network calls
-    const publicClient = config._internal.wagmiConfig.getClient();
+    const client = config._internal.wagmiConfig.getClient();
 
     // estimate gas limit  for the transaction
     const estimateGas = async (tx: any) => {
         // Estimate gas for a simple transfer (fallback)
         if (!gasLimit) {
             try {
-                const estimate = await publicClient.request({
+                const estimate = await client.request({
                     "id": 1,
                     "jsonrpc": "2.0",
                     "method": "eth_estimateGas",
@@ -69,11 +72,11 @@ export default function CustomSimulationPage() {
 
     // Fetch current block number
     useEffect(() => {
-        if (!publicClient) return;
+        if (!client) return;
 
         const fetchBlock = async () => {
             try {
-                const block = await publicClient.request({
+                const block = await client.request({
                     "id": 1,
                     "jsonrpc": "2.0",
                     "method": "eth_blockNumber"
@@ -93,18 +96,18 @@ export default function CustomSimulationPage() {
         fetchBlock();
         const interval = setInterval(fetchBlock, 15_000); // Update every 15s
         return () => clearInterval(interval);
-    }, [publicClient, usePendingBlock, blockNumber]);
+    }, [client, usePendingBlock, blockNumber]);
 
     // console.log({ currentBlock });
 
     // Fetch gas price
     useEffect(() => {
-        if (!publicClient || !client?.account?.address) return;
+        if (!client || !client?.account?.address) return;
 
         const fetchGasPrice = async () => {
             try {
                 // Fetch gas price
-                const feeData = await publicClient.request({
+                const feeData = await client.request({
                     "id": 1,
                     "jsonrpc": "2.0",
                     "method": "eth_gasPrice"
@@ -119,9 +122,9 @@ export default function CustomSimulationPage() {
         }
 
         fetchGasPrice();
-    }, [publicClient, client?.account?.address, gasPrice]);
+    }, [client, client?.account?.address, gasPrice]);
 
-    console.log({ gasPrice });
+    // console.log({ gasPrice });
 
     // Set default from address
     useEffect(() => {
@@ -135,8 +138,10 @@ export default function CustomSimulationPage() {
 
     // When "Use Pending Block" is toggled
     const handleUsePendingBlockChange = (checked: boolean) => {
+        console.log({ checked, currentBlock, blockNumber: !blockNumber });
         setUsePendingBlock(checked);
         if (!checked && currentBlock && !blockNumber) {
+            console.log("set");
             setBlockNumber(currentBlock.toString());
         }
     };
@@ -151,7 +156,7 @@ export default function CustomSimulationPage() {
     // Prevent hydration mismatch: only render results on client
     const [isClient, setIsClient] = useState(false);
     useEffect(() => {
-        if (publicClient) setIsClient(true);
+        if (client) setIsClient(true);
     }, []);
 
     // Parse ABI and extract functions whenever ABI changes
@@ -265,26 +270,31 @@ export default function CustomSimulationPage() {
         setIsSimulating(true);
         setError(null);
         setResults(null);
-
+        let parsedAbi, orderedArgs;
         try {
             if (!client) throw new Error('Wallet not connected');
-            if (!abi) throw new Error('ABI is required');
-            if (!selectedFunction) throw new Error('Function is required');
-            if (!contractAddress) throw new Error('Contract address is required');
+            if (isSimulatingContract) {
+                if (!abi) throw new Error('ABI is required');
+                if (!selectedFunction) throw new Error('Function is required');
+                if (!contractAddress) throw new Error('Contract address is required');
 
-            const parsedAbi = JSON.parse(abi);
-            const fn = parsedAbi.find((item: any) => item.type === 'function' && item.name === selectedFunction);
-            if (!fn) throw new Error('Selected function not found in ABI');
+                parsedAbi = JSON.parse(abi);
+                const fn = parsedAbi.find((item: any) => item.type === 'function' && item.name === selectedFunction);
+                if (!fn) throw new Error('Selected function not found in ABI');
 
-            // Build args array in order
-            const orderedArgs = fn.inputs.map((input: any) => args[input.name] || args[input.type] || '');
+                // Build args array in order
+                orderedArgs = fn.inputs.map((input: any) => args[input.name] || args[input.type] || '');
+            }
 
             const account = client.account?.address;
             const fromAddress = (from || account) as `0x${string}`;
+            console.log({ fromAddress });
             if (!fromAddress) throw new Error('From address is required');
-
+            console.log({ to });
+            console.log({ contractAddress });
             const toAddress = (to || contractAddress) as `0x${string}`;
-            if (toAddress) throw new Error("To address is required");
+            console.log({ toAddress });
+            if (!toAddress) throw new Error("To address is required");
 
             const tx: TxSimulationParams = {
                 from: fromAddress,
@@ -303,41 +313,33 @@ export default function CustomSimulationPage() {
             console.log({ block });
 
             // 🔧 Real Simulation: debug_traceCall
-            let trace;
-            let res;
+            let executedTx;
+            let res: { jsonrpc: string, id: string, result: string };
             try {
 
-                res = await fetch(`${process.env.NEXT_HYPEREVM_RPC_URL}`, {
-                    method: "POST",
-                    body: JSON.stringify({
-                        jsonrpc: "2.0",
-                        id: 1,
-                        method: "debug_traceCall",
-                        params: [tx, block, { tracer: "callTracer", timeout: '10s' }],
-                    }),
-                    headers: { "Content-Type": "application/json" },
-                });
-                trace = await res.json();
+                res = await client.request({
+                    jsonrpc: "2.0",
+                    id: 1,
+                    method: "eth_call",
+                    params: [tx, block],
+                }
+                );
+                console.log({ res });
+                executedTx = res.result;
             } catch (err: any) {
                 // Fallback: some providers block debug_traceCall
                 console.warn('debug_traceCall failed:', err.message);
                 throw new Error('Simulation failed: debug_traceCall not supported or permission denied. Try using a local fork or Alchemy.');
             }
 
-            const gasUsed = trace?.gas ? Number(trace.gas).toLocaleString() : 'Unknown';
-
-            // 📦 Access List
-            let accessList: AccessList[] = [];
             try {
                 const accessListResult = await client.request({
                     method: 'eth_createAccessList',
                     params: [tx, block],
                 })
                 if (typeof accessListResult === 'object' && 'accessList' in accessListResult!) {
-                    const { accessList, gasUsed } = accessListResult as {
-                        accessList: AccessList;
-                        gasUsed: Hex;
-                    };
+                    setAccessList(accessListResult.accessList);
+                    setGasUsed(accessListResult.gasUsed);
                     console.log({ accessList, gasUsed });
                 }
             } catch (err) {
@@ -348,7 +350,7 @@ export default function CustomSimulationPage() {
             setResults({
                 gasUsed,
                 status: 'success',
-                trace,
+                executedTx,
                 accessList,
                 block: block === 'pending' ? 'pending' : typeof block === 'number' ? block : 'latest',
             });
@@ -553,7 +555,7 @@ export default function CustomSimulationPage() {
                             </div>
 
                             <div>
-                                <label className="text-sm font-medium">Gas Limit</label>
+                                <label className="text-sm font-medium">Gas</label>
                                 <Input
                                     type="number"
                                     value={gasLimit}
