@@ -26,6 +26,20 @@ export function WalletAddressBadge() {
   //     window.open(`${chain.blockExplorers.default.url}/address/${address}`, "_blank");
   //   }
   // };
+  // Determine network
+  const isMainnet = client?.chain?.id === 999;
+  const isTestnet = client?.chain?.id === 998;
+
+  let networkLabel = "Unknown Network";
+  let networkColor = "bg-gray-500";
+
+  if (isMainnet) {
+    networkLabel = "HYPE Mainnet";
+    networkColor = "bg-green-500";
+  } else if (isTestnet) {
+    networkLabel = "HYPE Testnet";
+    networkColor = "bg-yellow-500";
+  }
 
   if (!address) return null;
 
@@ -53,8 +67,11 @@ export function WalletAddressBadge() {
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <span className="text-xs text-gray-500">
-        {chain.name}
+      {/* Network Badge */}
+      <span
+        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${networkColor}`}
+      >
+        {networkLabel}
       </span>
     </div>
 
