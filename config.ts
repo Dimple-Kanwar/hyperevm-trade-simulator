@@ -3,14 +3,9 @@ import {
   cookieStorage,
   createConfig,
 } from "@account-kit/react";
-import {
-  alchemy,
-  defineAlchemyChain,
-} from "@account-kit/infra";
+import { alchemy, defineAlchemyChain } from "@account-kit/infra";
 import { QueryClient } from "@tanstack/react-query";
 import { defineChain } from "viem";
-
-
 
 const API_KEY = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
 if (!API_KEY) {
@@ -60,10 +55,9 @@ export const hype_testnet = defineChain({
   },
 });
 
-
-// const testnet_chain = defineAlchemyChain({
+// const chain = defineAlchemyChain({
 //   chain: hype_testnet,
-//   rpcBaseUrl: "",
+//   rpcBaseUrl: "https://rpc.hyperliquid-testnet.xyz/evm",
 // });
 
 const chain = defineAlchemyChain({

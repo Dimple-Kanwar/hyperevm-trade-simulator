@@ -12,6 +12,7 @@ import { TxSimulationParams } from '@/app/types/TxSimulation';
 import Header from '@/app/components/header/Header';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { config } from '@/config';
+import { RadioGroup, RadioGroupItem } from '../components/ui/RadioGroup';
 
 // Type for parsed function
 type ParsedFunction = {
@@ -20,6 +21,9 @@ type ParsedFunction = {
     inputs: any[];
 };
 
+// Simulation Types
+type SimulationType = 'contract' | 'basic';
+
 export default function CustomSimulationPage() {
     const [results, setResults] = useState<any>(null);
     const [error, setError] = useState<string | null>(null);
@@ -27,13 +31,18 @@ export default function CustomSimulationPage() {
     const [isCopied, setIsCopied] = useState(false);
     const user = useUser();
 
-    // Form state
-    const [isSimulatingContract, setIsSimulatingContract] = useState(false);
+    // Simulation type
+    const [simulationType, setSimulationType] = useState<SimulationType>('contract');
+
+    // Contract state
     const [contractAddress, setContractAddress] = useState('');
     const [abi, setAbi] = useState('');
     const [functions, setFunctions] = useState<ParsedFunction[]>([]);
     const [selectedFunction, setSelectedFunction] = useState<string>('');
     const [args, setArgs] = useState<Record<string, string>>({});
+
+
+    // Transaction parameters
     const [from, setFrom] = useState('');
     const [to, setTo] = useState('');
     const [value, setValue] = useState('');
@@ -42,9 +51,9 @@ export default function CustomSimulationPage() {
     const [usePendingBlock, setUsePendingBlock] = useState(true);
     const [blockNumber, setBlockNumber] = useState<string>('');
     const [currentBlock, setCurrentBlock] = useState<number | null>(null);
-
     const [accessList, setAccessList] = useState<AccessList>([]);
     const [gasUsed, setGasUsed] = useState("");
+
     // Create public client for network calls
     const client = config._internal.wagmiConfig.getClient();
 
@@ -98,7 +107,6 @@ export default function CustomSimulationPage() {
         return () => clearInterval(interval);
     }, [client, usePendingBlock, blockNumber]);
 
-    // console.log({ currentBlock });
 
     // Fetch gas price
     useEffect(() => {
@@ -124,7 +132,6 @@ export default function CustomSimulationPage() {
         fetchGasPrice();
     }, [client, client?.account?.address, gasPrice]);
 
-    // console.log({ gasPrice });
 
     // Set default from address
     useEffect(() => {
@@ -133,7 +140,7 @@ export default function CustomSimulationPage() {
         if (user?.address && !from) {
             setFrom(user?.address);
         }
-    }, [client?.account?.address, from]);
+    }, [user?.address, from]);
 
 
     // When "Use Pending Block" is toggled
@@ -161,7 +168,7 @@ export default function CustomSimulationPage() {
 
     // Parse ABI and extract functions whenever ABI changes
     useEffect(() => {
-        if (!abi) {
+        if (!abi || simulationType !== 'contract') {
             setFunctions([]);
             setSelectedFunction('');
             setArgs({});
@@ -193,7 +200,7 @@ export default function CustomSimulationPage() {
             setFunctions([]);
             setSelectedFunction('');
         }
-    }, [abi]);
+    }, [abi, simulationType]);
 
     // Get current function
     const currentFunction = functions.find((fn) => fn.name === selectedFunction);
@@ -270,10 +277,14 @@ export default function CustomSimulationPage() {
         setIsSimulating(true);
         setError(null);
         setResults(null);
+
         let parsedAbi, orderedArgs;
+        let toAddress: `0x${string}` | undefined;
         try {
             if (!client) throw new Error('Wallet not connected');
-            if (isSimulatingContract) {
+
+            // Build calldata and to only if simulating contract
+            if (simulationType === 'contract') {
                 if (!abi) throw new Error('ABI is required');
                 if (!selectedFunction) throw new Error('Function is required');
                 if (!contractAddress) throw new Error('Contract address is required');
@@ -284,6 +295,8 @@ export default function CustomSimulationPage() {
 
                 // Build args array in order
                 orderedArgs = fn.inputs.map((input: any) => args[input.name] || args[input.type] || '');
+                toAddress = contractAddress as `0x${string}`;
+
             }
 
             const account = client.account?.address;
@@ -292,7 +305,7 @@ export default function CustomSimulationPage() {
             if (!fromAddress) throw new Error('From address is required');
             console.log({ to });
             console.log({ contractAddress });
-            const toAddress = (to || contractAddress) as `0x${string}`;
+            toAddress = to as `0x${string}`;
             console.log({ toAddress });
             if (!toAddress) throw new Error("To address is required");
 
@@ -303,7 +316,7 @@ export default function CustomSimulationPage() {
                     abi: parsedAbi,
                     functionName: selectedFunction,
                     args: orderedArgs,
-                }) : undefined,
+                }) : '0x',
                 value: value ? numberToHex(parseEther(value)) : undefined,
                 gas: gasLimit ? numberToHex(BigInt(gasLimit)) : undefined,
             };
@@ -313,44 +326,31 @@ export default function CustomSimulationPage() {
             console.log({ block });
 
             // 🔧 Real Simulation: debug_traceCall
-            let executedTx;
             let res: { jsonrpc: string, id: string, result: string };
-            try {
+            const result = await client.request({
+                jsonrpc: "2.0",
+                id: 1,
+                method: "eth_call", //replace with debug_traceCall
+                params: [tx, block],
+            }
+            );
+            console.log({ result });
 
-                res = await client.request({
-                    jsonrpc: "2.0",
-                    id: 1,
-                    method: "eth_call",
-                    params: [tx, block],
-                }
-                );
-                console.log({ res });
-                executedTx = res.result;
-            } catch (err: any) {
-                // Fallback: some providers block debug_traceCall
-                console.warn('debug_traceCall failed:', err.message);
-                throw new Error('Simulation failed: debug_traceCall not supported or permission denied. Try using a local fork or Alchemy.');
+            const accessListResult = await client.request({
+                method: 'eth_createAccessList',
+                params: [tx, block],
+            })
+            if (typeof accessListResult === 'object' && 'accessList' in accessListResult!) {
+                setAccessList(accessListResult.accessList);
+                setGasUsed(accessListResult.gasUsed);
+                console.log({ accessList, gasUsed });
             }
 
-            try {
-                const accessListResult = await client.request({
-                    method: 'eth_createAccessList',
-                    params: [tx, block],
-                })
-                if (typeof accessListResult === 'object' && 'accessList' in accessListResult!) {
-                    setAccessList(accessListResult.accessList);
-                    setGasUsed(accessListResult.gasUsed);
-                    console.log({ accessList, gasUsed });
-                }
-            } catch (err) {
-                console.warn('eth_createAccessList failed:', (err as Error).message);
-                // Continue without access list
-            }
 
             setResults({
                 gasUsed,
                 status: 'success',
-                executedTx,
+                result,
                 accessList,
                 block: block === 'pending' ? 'pending' : typeof block === 'number' ? block : 'latest',
             });
@@ -378,130 +378,155 @@ export default function CustomSimulationPage() {
                 <main className="container mx-auto px-4 py-8 h-full">
                     <h1 className="text-2xl font-semibold mb-6">New Custom Simulation</h1>
 
-                    {/* Contract Configuration */}
+                    {/* Simulation Type Toggle */}
                     <Card className="mb-6">
                         <CardHeader>
-                            <CardTitle>Contract</CardTitle>
-                            <CardDescription>Simulate and Test Smart Contract transactions</CardDescription>
+                            <CardTitle>Simulation Type</CardTitle>
+                            <CardDescription>Choose what you'd like to simulate</CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div>
-                                <label className="text-sm font-medium">Enter Contract Address</label>
-                                <Input
-                                    placeholder="0x..."
-                                    value={contractAddress}
-                                    onChange={(e: { target: { value: SetStateAction<string>; }; }) => setContractAddress(e.target.value)}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium">ABI (JSON)</label>
-                                {abi && (
-                                    <Button variant="ghost" size="sm" onClick={handleResetAbi}>
-                                        Reset ABI
-                                    </Button>
-                                )}
-                            </div>
-                            <div className="mt-1 flex items-center gap-2">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                        const input = document.getElementById('abi-upload') as HTMLInputElement;
-                                        input?.click();
-                                    }}
-                                >
-                                    Upload ABI JSON
-                                </Button>
-                                <input
-                                    id="abi-upload"
-                                    type="file"
-                                    accept=".json"
-                                    onChange={handleFileUpload}
-                                    className="hidden"
-                                />
-                                <span className="text-xs text-muted-foreground">
-                                    {abi ? 'File loaded' : 'No file selected'}
-                                </span>
-                            </div>
-                            <Textarea
-                                placeholder='Paste ABI JSON here, e.g., [{"name": "transfer", "type": "function", ...}]'
-                                value={abi}
-                                onChange={handleAbiChange}
-                                rows={6}
-                                className="mt-2 font-mono text-xs"
-                            />
-                            {/* Function Dropdown */}
-                            <div>
-                                <label className="text-sm font-medium">Select Function</label>
-                                {functions.length === 0 ? (
-                                    <Input
-                                        placeholder="Enter ABI to load functions"
-                                        disabled
-                                        className="mt-2"
-                                    />
-                                ) : (
-                                    <div className="flex gap-2">
-                                        <select
-                                            value={selectedFunction}
-                                            onChange={(e) => setSelectedFunction(e.target.value)}
-                                            className="flex-1 p-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        >
-                                            {functions.map((fn) => (
-                                                <option key={fn.name} value={fn.name}>
-                                                    {fn.signature}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        {currentFunction && (
-                                            <TooltipProvider>
-                                                <Tooltip open={isCopied}>
-                                                    <TooltipTrigger asChild>
-                                                        <Button
-                                                            type="button"
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={handleCopySelector}
-                                                            title="Copy function selector (e.g. 0xa9059cbb)"
-                                                        >
-                                                            Copy Selector
-                                                        </Button>
-                                                    </TooltipTrigger>
-                                                    <TooltipContent>
-                                                        <p>Copied!</p>
-                                                    </TooltipContent>
-                                                </Tooltip>
-                                            </TooltipProvider>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                            {/* Dynamic Arguments */}
-                            {currentFunction && (
-                                <div>
-                                    <label className="text-sm font-medium">Arguments</label>
-                                    <div className="space-y-2 mt-2">
-                                        {currentFunction.inputs.map((input, index) => (
-                                            <div key={index} className="flex gap-2">
-                                                <Input
-                                                    placeholder={input.name || `arg ${index} (${input.type})`}
-                                                    value={args[input.name] || ''}
-                                                    onChange={(e) =>
-                                                        setArgs((prev) => ({
-                                                            ...prev,
-                                                            [input.name || input.type]: e.target.value,
-                                                        }))
-                                                    }
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
+                        <CardContent>
+                            <RadioGroup
+                                value={simulationType}
+                                onValueChange={(value) => setSimulationType(value as SimulationType)}
+                                className="flex flex-col sm:flex-row gap-4"
+                            >
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="contract" id="contract" label='Smart Contract Interaction' />
                                 </div>
-                            )}
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="basic" id="basic" label='Basic Transaction' />
+                                </div>
+                            </RadioGroup>
                         </CardContent>
                     </Card>
 
-                    {/* Transaction Parameters */}
+                    {/* Contract Configuration (Only if contract simulation) */}
+                    {simulationType === 'contract' && (
+                        <Card className="mb-6">
+                            <CardHeader>
+                                <CardTitle>Contract</CardTitle>
+                                <CardDescription>Simulate Smart Contract Interactions</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div>
+                                    <label className="text-sm font-medium">Contract Address</label>
+                                    <Input
+                                        placeholder="0x..."
+                                        value={contractAddress}
+                                        onChange={(e: { target: { value: SetStateAction<string>; }; }) => setContractAddress(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium">ABI (JSON)</label>
+                                    {abi && (
+                                        <Button variant="ghost" size="sm" onClick={handleResetAbi}>
+                                            Reset ABI
+                                        </Button>
+                                    )}
+                                </div>
+                                <div className="mt-1 flex items-center gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                            const input = document.getElementById('abi-upload') as HTMLInputElement;
+                                            input?.click();
+                                        }}
+                                    >
+                                        Upload ABI JSON
+                                    </Button>
+                                    <input
+                                        id="abi-upload"
+                                        type="file"
+                                        accept=".json"
+                                        onChange={handleFileUpload}
+                                        className="hidden"
+                                    />
+                                    <span className="text-xs text-muted-foreground">
+                                        {abi ? 'File loaded' : 'No file selected'}
+                                    </span>
+                                </div>
+                                <Textarea
+                                    placeholder='Paste ABI JSON here, e.g., [{"name": "transfer", "type": "function", ...}]'
+                                    value={abi}
+                                    onChange={handleAbiChange}
+                                    rows={6}
+                                    className="mt-2 font-mono text-xs"
+                                />
+                                {/* Function Dropdown */}
+
+                                <div>
+                                    <label className="text-sm font-medium">Select Function</label>
+                                    {functions.length === 0 ? (
+                                        <Input
+                                            placeholder="Enter ABI to load functions"
+                                            disabled
+                                            className="mt-2"
+                                        />
+                                    ) : (
+                                        <div className="flex gap-2">
+                                            <select
+                                                value={selectedFunction}
+                                                onChange={(e) => setSelectedFunction(e.target.value)}
+                                                className="flex-1 p-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            >
+                                                {functions.map((fn) => (
+                                                    <option key={fn.name} value={fn.name}>
+                                                        {fn.signature}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            {currentFunction && (
+                                                <TooltipProvider>
+                                                    <Tooltip open={isCopied}>
+                                                        <TooltipTrigger asChild>
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={handleCopySelector}
+                                                                title="Copy function selector (e.g. 0xa9059cbb)"
+                                                            >
+                                                                Copy Selector
+                                                            </Button>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent>
+                                                            <p>Copied!</p>
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                                {/* Dynamic Arguments */}
+                                {currentFunction && (
+                                    <div>
+                                        <label className="text-sm font-medium">Arguments</label>
+                                        <div className="space-y-2 mt-2">
+                                            {currentFunction.inputs.map((input, index) => (
+                                                <div key={index} className="flex gap-2">
+                                                    <Input
+                                                        placeholder={input.name || `arg ${index} (${input.type})`}
+                                                        value={args[input.name] || ''}
+                                                        onChange={(e) =>
+                                                            setArgs((prev) => ({
+                                                                ...prev,
+                                                                [input.name || input.type]: e.target.value,
+                                                            }))
+                                                        }
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* Transaction Parameters (Always visible) */}
                     <Card className="mb-6">
                         <CardHeader>
                             <CardTitle>Transaction Parameters</CardTitle>
@@ -605,11 +630,9 @@ export default function CustomSimulationPage() {
 
                     {/* Results */}
                     {error && (
-                        <Card className="border-destructive/50 bg-destructive/10 mb-6">
+                        <Card className="bg-red-50 border-red-200 mb-6">
                             <CardContent className="p-4">
-                                <p className="text-sm text-destructive">
-                                    <strong>Error:</strong> {error}
-                                </p>
+                                <p className="text-red-700"><strong>Error:</strong> {error}</p>
                             </CardContent>
                         </Card>
                     )}
@@ -618,37 +641,11 @@ export default function CustomSimulationPage() {
                         <Card>
                             <CardHeader>
                                 <CardTitle>Simulation Results</CardTitle>
-                                <CardDescription>Execution trace and gas usage</CardDescription>
                             </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div>
-                                    <strong>Gas Used:</strong> {results.gasUsed}
-                                </div>
-                                <div>
-                                    <strong>Status:</strong>{' '}
-                                    <span className="text-green-600 font-medium">Success</span>
-                                </div>
-                                <div>
-                                    <strong>Block:</strong> {results.block}
-                                </div>
-
-                                {/* Access List */}
-                                {results.accessList.length > 0 && (
-                                    <div>
-                                        <h4 className="font-medium mb-1">Access List</h4>
-                                        <pre className="p-3 bg-muted rounded text-xs overflow-auto max-h-40">
-                                            {JSON.stringify(results.accessList, null, 2)}
-                                        </pre>
-                                    </div>
-                                )}
-
-                                {/* Trace */}
-                                <div>
-                                    <h4 className="font-medium mb-1">Call Trace</h4>
-                                    <pre className="p-3 bg-muted rounded text-xs overflow-auto max-h-60">
-                                        {JSON.stringify(results.trace, null, 2)}
-                                    </pre>
-                                </div>
+                            <CardContent>
+                                <pre className="p-3 bg-gray-100 dark:bg-gray-800 rounded text-xs overflow-auto">
+                                    {JSON.stringify(results, null, 2)}
+                                </pre>
                             </CardContent>
                         </Card>
                     )}
