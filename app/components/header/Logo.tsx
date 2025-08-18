@@ -10,7 +10,7 @@ export function Logo() {
         height={26}
         className="h-6 w-auto"
       />
-      <h1>HyperEVM Transaction Simulator</h1>
+      <h1 className="text-2xl font-bold">HyperEVM Transaction Simulator</h1>
     </div>
   );
 }

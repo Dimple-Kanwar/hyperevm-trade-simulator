@@ -16,10 +16,11 @@ import { RadioGroup, RadioGroupItem } from '../components/ui/RadioGroup';
 import { useNetwork } from '../context/Network-Context';
 import { toHexQty, toHexWei, tryDecodeRevert } from '@/lib/utils';
 import { ethers } from 'ethers';
-import { Plus, Section, Trash2 } from 'lucide-react';
+import { Plus, Rocket, Section, Settings, Trash2, Wrench } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { CHAINS } from '@/lib/constants';
-import { json } from 'stream/consumers';
+import SimulationResults from '@/app/components/simulator/SimulationResults';
+import ContractEditor from '../components/simulator/ContractEditor';
 
 export default function CustomSimulationPage() {
     const { network } = useNetwork();
@@ -288,7 +289,10 @@ export default function CustomSimulationPage() {
         setError(null);
     };
 
-    const iface = useMemo(() => JSON.parse("{}"), [abi]);
+    const iface = useMemo(() => {
+        if (abi == "") return {};
+        return JSON.parse(abi)
+    }, [abi]);
 
     // Serialize overrides for eth_call (Geth-style), if present
     const buildStateOverrides = () => {
@@ -323,6 +327,7 @@ export default function CustomSimulationPage() {
             // if (!contractAddress) throw new Error('Contract address is required');
 
             try {
+                if (abi == "") return "0x";
                 parsedAbi = JSON.parse(abi);
                 const fn = parsedAbi.find((item: any) => item.type === 'function' && item.name === selectedFunction);
                 if (!fn) throw new Error('Selected function not found in ABI');
@@ -389,6 +394,22 @@ export default function CustomSimulationPage() {
     };
 
 
+    // Action: Trace (best effort)
+    const traceCall = async () => {
+        setTraceUnsupported(false);
+        if (!provider) return;
+        try {
+            const params: any[] = [{ ...currentTx }, blockTag || "latest", {}];
+            const so = buildStateOverrides();
+            if (so) params.push(so); // some nodes may treat overrides separately
+            const trace = await (provider as any).send("debug_traceCall", params);
+            // For demo, just dump to console; you can render a nice tree view here
+            console.log("TRACE", trace);
+            alert("debug_traceCall succeeded – check console for raw trace. Implement your visualizer as needed.");
+        } catch (e) {
+            setTraceUnsupported(true);
+        }
+    };
     // Bundle: add current built tx
     const addToBundle = () => {
         const data = buildCalldata();
@@ -417,6 +438,34 @@ export default function CustomSimulationPage() {
         console.log("Bundle results", results);
     };
 
+
+    // Shareable link: serialize inputs to URL hash
+    const copyShareLink = async () => {
+        const payload = {
+            network,
+            from,
+            to,
+            abi,
+            selectedFunction,
+            args,
+            value,
+            blockTag,
+            gasLimit,
+            gasPrice,
+            maxFeePerGas,
+            maxPriorityFeePerGas,
+            nonce,
+            accessList,
+            overrides,
+            bundle,
+        };
+        const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+        const url = `${window.location.origin}${window.location.pathname}#${b64}`;
+        await navigator.clipboard.writeText(url);
+        alert("Shareable link copied to clipboard!");
+    };
+
+
     // Simulate Transaction
     const handleSimulate = async () => {
         setIsSimulating(true);
@@ -433,6 +482,7 @@ export default function CustomSimulationPage() {
         try {
             if (!client) throw new Error('Wallet not connected');
 
+            // 🔧 Real Simulation: debug_traceCall
             // eth_call
             const params: any[] = [{ ...currentTx }, blockTag || "latest"];
             if (so) params.push(so);
@@ -457,63 +507,7 @@ export default function CustomSimulationPage() {
                 setGasEstimate(null);
             }
 
-            // const account = client.account?.address;
-            // const fromAddress = (fromAddr || account) as `0x${string}`;
-            // console.log({ fromAddress });
-            // if (!fromAddress) throw new Error('From address is required');
-            // console.log({ to });
-            // console.log({ contractAddress });
-            // toAddress = to as `0x${string}`;
-            // console.log({ toAddress });
-            // if (!toAddress) throw new Error("To address is required");
 
-            // const tx = {
-            //     from: fromAddress,
-            //     to: toAddress,
-            //     data: buildCalldata(),
-            //     value: value ? numberToHex(parseEther(value)) : undefined,
-            //     gas: gasLimit ? numberToHex(BigInt(gasLimit)) : undefined,
-            //     // gasPrice: gasPrice === "auto" ? undefined : gasPrice,
-            //     nonce: nonce ? numberToHex(BigInt(nonce)) : undefined,
-            // };
-
-            // console.log({ tx });
-
-            // const payload = {
-            //     jsonrpc: "2.0",
-            //     id: 1,
-            //     method: "eth_call",
-            //     params: [
-            //         tx,
-            //         blockTag,
-            //     ],
-            // };
-
-            // 🔧 Real Simulation: debug_traceCall
-
-            // const res = await fetch(rpcUrl, {
-            //     method: "POST",
-            //     headers: { "Content-Type": "application/json" },
-            //     body: JSON.stringify(payload),
-            // });
-
-            // const json = await res.json();
-
-            // if (json.error) {
-            //     setResults({
-            //         success: false,
-            //         gasUsed: "0",
-            //         logs: [],
-            //         error: json.error.message,
-            //     });
-            // } else {
-            //     setResults({
-            //         success: true,
-            //         gasUsed: json.result?.gasUsed || "n/a",
-            //         // accessList,
-            //         logs: json.result?.logs || [],
-            //     });
-            // }
         } catch (err: any) {
             const msg = err?.error?.data || err?.data || err?.message || String(err);
             setError(typeof msg === "string" ? msg : JSON.stringify(msg));
@@ -523,24 +517,17 @@ export default function CustomSimulationPage() {
                 const r = tryDecodeRevert(hex);
                 if (r) setRevertInfo(r);
             }
-            setError(err.message || 'Simulation failed');
-            setResults({
-                success: false,
-                gasUsed: "0",
-                logs: [],
-                error: err.message,
-            });
+            // setError(err.message || 'Simulation failed');
+            // setResults({
+            //     success: false,
+            //     gasUsed: "0",
+            //     logs: [],
+            //     error: err.message,
+            // });
         } finally {
             setIsSimulating(false);
         }
     };
-    // setResults({
-    //     gasUsed,
-    //     status: ,
-    //     results,
-    //     accessList,
-    //     block: Lock === 'pending' ? 'pending' : typeof Lock === 'number' ? Lock : 'latest',
-    // });
 
     // Hydration-safe rendering
     if (!isClient) {
@@ -554,7 +541,7 @@ export default function CustomSimulationPage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
-            <Header from={from!}/>
+            <Header from={from!} />
             <div className="bg-bg-main bg-cover bg-center bg-no-repeat h-[calc(100vh-4rem)]">
                 <main className="container mx-auto px-4 py-8 h-full">
                     <h1 className="text-2xl font-semibold mb-6">New Custom Simulation</h1>
@@ -585,7 +572,7 @@ export default function CustomSimulationPage() {
                     {simulationType === 'contract' && (
                         <Card className="mb-6">
                             <CardHeader>
-                                <CardTitle>Contract</CardTitle>
+                                <CardTitle title='Contract' >Contract</CardTitle>
                                 <CardDescription>Simulate Smart Contract Interactions</CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
@@ -815,6 +802,7 @@ export default function CustomSimulationPage() {
                                 />
                             </div>
 
+
                             {/* State Overrides */}
                             <div>
                                 <label className="text-sm font-medium">State Overrides (experimental)</label>
@@ -938,9 +926,18 @@ export default function CustomSimulationPage() {
                         </CardContent>
                     </Card>
 
+                    {/* <div className="flex gap-2">
+
+                        {/* <button onClick={handleSimulate} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm"><Rocket size={16} /> Simulate</button> */}
+
+                    {/* </div>  */}
+
                     {/* Simulate Button */}
-                    <div className="flex justify-end mb-6">
+                    <div className="flex justify-end mb-6 gap-2">
+                        <button onClick={createAccessList} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800 text-white text-sm"><Settings size={16} /> Create Access List</button>
+                        <button onClick={traceCall} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-600 text-white text-sm"><Wrench size={16} /> Trace (best-effort)</button>
                         <Button size="lg" onClick={handleSimulate} disabled={isSimulating}>
+                            <Rocket size={16} />
                             {isSimulating ? (
                                 <>
                                     <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -954,25 +951,75 @@ export default function CustomSimulationPage() {
                             )}
                         </Button>
                     </div>
+                    {accessListUnsupported && <p className="text-xs text-amber-700 mt-2">Node does not support <code>eth_createAccessList</code>.</p>}
+                    {traceUnsupported && <p className="text-xs text-amber-700 mt-2">Node likely does not support <code>debug_traceCall</code>. Execution trace unavailable.</p>}
+
 
                     {/* Results */}
                     {results && (
-                        <div className="mt-6 p-4 border rounded bg-gray-50">
-                            <h3 className="font-bold">
-                                Simulation {results.success ? "Success ✅" : "Failed ❌"}
-                            </h3>
-                            <p><b>Gas Used:</b> {results.gasUsed}</p>
-                            {results.error && <p className="text-red-500"><b>Error:</b> {results.error}</p>}
-                            {results.logs.length > 0 && (
-                                <div>
-                                    <b>Logs:</b>
-                                    <pre className="text-xs bg-black text-green-400 p-2 rounded">
-                                        {JSON.stringify(results.logs, null, 2)}
-                                    </pre>
+                        <div className="xl:col-span-2 space-y-6">
+                            <Card title="Results & Insights">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                    <div className="space-y-2">
+                                        <div className="text-xs text-gray-500">Raw Return (hex)</div>
+                                        <pre className="p-3 bg-gray-50 rounded-lg overflow-x-auto min-h-[72px]">{callResult ?? "—"}</pre>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="text-xs text-gray-500">Decoded Return (if ABI provided)</div>
+                                        <pre className="p-3 bg-gray-50 rounded-lg overflow-x-auto min-h-[72px]">{decodedResult ? JSON.stringify(decodedResult, null, 2) : "—"}</pre>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="text-xs text-gray-500">Estimated Gas</div>
+                                        <div className="p-3 bg-gray-50 rounded-lg">{gasEstimate ?? "—"}</div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="text-xs text-gray-500">Revert / Error</div>
+                                        <pre className="p-3 bg-gray-50 rounded-lg overflow-x-auto min-h-[72px]">{error ? String(error) : "—"}</pre>
+                                        {revertInfo && (
+                                            <div className="text-xs text-rose-700">{revertInfo.type}: {revertInfo.reason ?? revertInfo.code}</div>
+                                        )}
+                                    </div>
                                 </div>
-                            )}
+                            </Card>
+                            <Card title="Advanced Diagnostics">
+                                <ul className="list-disc pl-6 text-sm space-y-1 text-gray-700">
+                                    <li>
+                                        <b>Real-time state:</b> your simulations use the selected provider at <code>{chain.rpcUrl}</code> and block tag <code>{blockTag}</code>.
+                                    </li>
+                                    <li>
+                                        <b>Historical simulation:</b> set <i>Block Tag</i> to a past block number or hash.
+                                    </li>
+                                    <li>
+                                        <b>Gas profiling:</b> uses <code>eth_estimateGas</code>. Opcode-level breakdown requires <code>debug_traceCall</code>.
+                                    </li>
+                                    <li>
+                                        <b>Event decoding:</b> not available from <code>eth_call</code> alone; requires tracing APIs.
+                                    </li>
+                                    <li>
+                                        <b>State overrides:</b> best-effort via non-standard <i>stateOverrides</i>. If RPC rejects, this feature will be limited.
+                                    </li>
+                                </ul>
+                            </Card>
                         </div>
                     )}
+
+                    <div className="container mx-auto px-4 py-6">
+                        <h1 className="text-2xl font-bold mb-6">Transaction Simulation</h1>
+
+                        {/* Contract Editor toggle (hidden by default) */}
+                        <ContractEditor />
+
+                        {/* Always visible results */}
+                        <SimulationResults
+                            result={{
+                                status: "success",
+                                gasUsed: "280000",
+                                blockNumber: "123456",
+                                logs: [],
+                                trace: [{ op: "CALL", gas: 21000 }],
+                            }}
+                        />
+                    </div>
                     {/* {error && (
                         <Card className="bg-red-50 border-red-200 mb-6">
                             <CardContent className="p-4">
