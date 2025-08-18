@@ -5,7 +5,7 @@ import {
 } from "@account-kit/react";
 import { alchemy, defineAlchemyChain } from "@account-kit/infra";
 import { QueryClient } from "@tanstack/react-query";
-import { defineChain } from "viem";
+import { defineChain, http } from "viem";
 
 const API_KEY = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
 if (!API_KEY) {
@@ -16,7 +16,6 @@ const SPONSORSHIP_POLICY_ID = process.env.NEXT_PUBLIC_ALCHEMY_POLICY_ID;
 if (!SPONSORSHIP_POLICY_ID) {
   throw new Error("NEXT_PUBLIC_ALCHEMY_POLICY_ID is not set");
 }
-
 export const hype = defineChain({
   id: 999,
   name: "Hype Mainnet",
@@ -65,7 +64,6 @@ const chain = defineAlchemyChain({
   rpcBaseUrl: `https://hyperliquid-mainnet.g.alchemy.com/v2/${API_KEY}`,
 });
 
-
 const uiConfig: AlchemyAccountsUIConfig = {
   illustrationStyle: "outline",
   auth: {
@@ -82,14 +80,17 @@ const uiConfig: AlchemyAccountsUIConfig = {
         },
       ],
     ],
-    addPasskeyOnSignup: false
+    addPasskeyOnSignup: false,
   },
-
 };
 
+const transport =
+  chain.id === 999
+    ? alchemy({ apiKey: API_KEY })
+    : alchemy({rpcUrl: "https://rpc.hyperliquid-testnet.xyz/evm"}); // ✅ viem's http transport
 export const config = createConfig(
   {
-    transport: alchemy({ apiKey: API_KEY }),
+    transport,
     // Note: This quickstart is configured for Arbitrum Sepolia.
     chain: chain,
     ssr: true, // more about ssr: https://www.alchemy.com/docs/wallets/react/ssr

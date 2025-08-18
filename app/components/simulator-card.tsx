@@ -1,3 +1,5 @@
+"use client";
+
 import { Button } from "@/app/components/ui/button";
 import {
   Card,
@@ -7,19 +9,45 @@ import {
   CardTitle,
 } from "@/app/components/ui/card";
 import Link from "next/link";
+import { useNetwork } from "@/app/context/Network-Context";
 
-export default function SimulatorCard() {
+interface SimulatorCardProps {
+  from: string; // logged-in address (Alchemy or impersonated)
+}
+
+export default function SimulatorCard({ from }: SimulatorCardProps) {
+  const { network } = useNetwork();
+  console.log({from});
   return (
-    <Link href="/simulate" passHref>
+    <Link
+      href={{
+        pathname: "/simulate",
+        query: { from, network }, // pass info to simulator page
+      }}
+      passHref
+    >
       <Card className="overflow-hidden">
         <CardHeader className="pb-0">
           <div className="flex justify-between items-center">
             <div>
-              <CardTitle className="mb-2">HyperEVM Transaction Simulator</CardTitle>
+              <CardTitle className="mb-2">
+                HyperEVM Transaction Simulator
+              </CardTitle>
               <CardDescription>
-                  Simulate transactions to preview their exact outcomes in a safe environment.
-                  <br/>
-                  Test transaction execution, prevent failures, and optimize contracts before going to production.
+                {network === "mainnet" ? (
+                  <>
+                    Simulate real transactions with your{" "}
+                    <b>Alchemy Smart Wallet</b>.
+                  </>
+                ) : (
+                  <>
+                    Simulate <b>testnet transactions</b> by impersonating any
+                    address.
+                  </>
+                )}
+                <br />
+                Preview execution, debug failures, and optimize gas before
+                production.
               </CardDescription>
             </div>
           </div>
@@ -27,7 +55,9 @@ export default function SimulatorCard() {
         <CardContent className="pt-6">
           <br />
           <Button className="w-full group-hover:bg-blue-600 transition-colors">
-            Simulate Transaction
+            {network === "mainnet"
+              ? "Simulate Mainnet Transaction"
+              : "Simulate Testnet Transaction"}
           </Button>
         </CardContent>
       </Card>

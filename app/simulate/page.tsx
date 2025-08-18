@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, SetStateAction } from 'react';
+import { useState, useEffect, SetStateAction, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
@@ -8,24 +8,43 @@ import { useUser } from '@account-kit/react';
 import { encodeFunctionData, parseEther, formatEther, AccessList, Hex, numberToHex, BlockTag, keccak256, toHex } from 'viem';
 import { Input } from '@/app/components/ui/Input';
 import { Textarea } from '@/app/components/ui/Textarea';
-import { TxSimulationParams } from '@/app/types/TxSimulation';
+import { AccessListItem, AccountOverride, BundleResults, ParsedFunction, SimulationResult, SimulationType, SimulatorProps, TxSimulationParams } from '@/app/types/TxSimulation';
 import Header from '@/app/components/header/Header';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { config } from '@/config';
 import { RadioGroup, RadioGroupItem } from '../components/ui/RadioGroup';
-
-// Type for parsed function
-type ParsedFunction = {
-    name: string;
-    signature: string;
-    inputs: any[];
-};
-
-// Simulation Types
-type SimulationType = 'contract' | 'basic';
+import { useNetwork } from '../context/Network-Context';
+import { toHexQty, toHexWei, tryDecodeRevert } from '@/lib/utils';
+import { ethers } from 'ethers';
+import { Plus, Section, Trash2 } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { CHAINS } from '@/lib/constants';
+import { json } from 'stream/consumers';
 
 export default function CustomSimulationPage() {
-    const [results, setResults] = useState<any>(null);
+    const { network } = useNetwork();
+    const chain = CHAINS[network];
+    const rpcUrl = chain.rpcUrl
+
+    const [provider, setProvider] = useState<ethers.JsonRpcProvider | null>(null);
+
+    useEffect(() => {
+        setProvider(new ethers.JsonRpcProvider(rpcUrl));
+    }, [network]);
+
+
+    const searchParams = useSearchParams();
+    const from = searchParams.get("from") || "";
+    // console.log({ from });
+
+    // results
+    const [callResult, setCallResult] = useState<string | null>(null);
+    const [results, setResults] = useState<SimulationResult | null>(null);
+    const [decodedResult, setDecodedResult] = useState<any>(null);
+    const [gasEstimate, setGasEstimate] = useState<string | null>(null);
+    const [traceUnsupported, setTraceUnsupported] = useState<boolean>(false);
+
+    const [revertInfo, setRevertInfo] = useState<any>(null);
     const [error, setError] = useState<string | null>(null);
     const [isSimulating, setIsSimulating] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
@@ -43,41 +62,37 @@ export default function CustomSimulationPage() {
 
 
     // Transaction parameters
-    const [from, setFrom] = useState('');
+    const [fromAddr, setFromAddr] = useState(from);
     const [to, setTo] = useState('');
-    const [value, setValue] = useState('');
-    const [gasLimit, setGasLimit] = useState('');
+    const [value, setValue] = useState("0");
+    const [gasLimit, setGasLimit] = useState('21000');
     const [gasPrice, setGasPrice] = useState('');
+    const [maxFeePerGas, setMaxFeePerGas] = useState<string>("");
+    const [maxPriorityFeePerGas, setMaxPriorityFeePerGas] = useState<string>("");
+    const [nonce, setNonce] = useState('');
     const [usePendingBlock, setUsePendingBlock] = useState(true);
     const [blockNumber, setBlockNumber] = useState<string>('');
     const [currentBlock, setCurrentBlock] = useState<number | null>(null);
-    const [accessList, setAccessList] = useState<AccessList>([]);
     const [gasUsed, setGasUsed] = useState("");
+
+    // Advanced features
+    const [accessList, setAccessList] = useState<AccessListItem[]>([]);
+    const [accessListUnsupported, setAccessListUnsupported] = useState<boolean>(false);
+
+
+    // state overrides
+    const [overrides, setOverrides] = useState<AccountOverride[]>([]);
+    const [stateOverrideUnsupported, setStateOverrideUnsupported] = useState<boolean>(false);
+
+    // bundle
+    type BuiltTx = { label: string; to: string; data?: string; value?: string };
+    const [bundle, setBundle] = useState<BuiltTx[]>([]);
+
+    const [contractCode, setContractCode] = useState('');
+
 
     // Create public client for network calls
     const client = config._internal.wagmiConfig.getClient();
-
-    // estimate gas limit  for the transaction
-    const estimateGas = async (tx: any) => {
-        // Estimate gas for a simple transfer (fallback)
-        if (!gasLimit) {
-            try {
-                const estimate = await client.request({
-                    "id": 1,
-                    "jsonrpc": "2.0",
-                    "method": "eth_estimateGas",
-                    "params": tx // should be an array
-                });
-                console.log({ estimate });
-                console.log({ gasLimit: (Number(estimate) * 1.2).toFixed(0) });
-                setGasLimit((Number(estimate) * 1.2).toFixed(0)); // Add 20% buffer
-            } catch (err) {
-                console.log("Error while estimating gas for the transaction.Error: ", err);
-                console.log({ gasLimit: 21000 });
-                setGasLimit('21000'); // Fallback
-            }
-        }
-    }
 
     // Fetch current block number
     useEffect(() => {
@@ -136,11 +151,11 @@ export default function CustomSimulationPage() {
     // Set default from address
     useEffect(() => {
         console.log("connected account: ", user?.address);
-        console.log("from account: ", from);
-        if (user?.address && !from) {
-            setFrom(user?.address);
+        console.log("from account: ", fromAddr);
+        if (user?.address && !fromAddr) {
+            setFromAddr(user?.address);
         }
-    }, [user?.address, from]);
+    }, [user?.address, fromAddr]);
 
 
     // When "Use Pending Block" is toggled
@@ -273,93 +288,259 @@ export default function CustomSimulationPage() {
         setError(null);
     };
 
-    const handleSimulate = async () => {
-        setIsSimulating(true);
-        setError(null);
-        setResults(null);
+    const iface = useMemo(() => JSON.parse("{}"), [abi]);
 
-        let parsedAbi, orderedArgs;
-        let toAddress: `0x${string}` | undefined;
+    // Serialize overrides for eth_call (Geth-style), if present
+    const buildStateOverrides = () => {
+        if (!overrides.length) return undefined;
         try {
-            if (!client) throw new Error('Wallet not connected');
+            const obj: any = {};
+            for (const acc of overrides) {
+                const entry: any = {};
+                if (acc.balance) entry.balance = toHexWei(acc.balance);
+                if (acc.code) entry.code = acc.code;
+                if (acc.storage?.length) {
+                    entry.state = {} as Record<string, string>;
+                    for (const s of acc.storage) {
+                        entry.state[s.key] = s.value;
+                    }
+                }
+                obj[acc.address] = entry;
+            }
+            return obj;
+        } catch {
+            return undefined;
+        }
+    };
 
-            // Build calldata and to only if simulating contract
-            if (simulationType === 'contract') {
-                if (!abi) throw new Error('ABI is required');
-                if (!selectedFunction) throw new Error('Function is required');
-                if (!contractAddress) throw new Error('Contract address is required');
+    // Build data from ABI + args
+    const buildCalldata = (): string | undefined => {
+        let parsedAbi, orderedArgs;
+        // Build calldata and to only if simulating contract
+        if (simulationType === 'contract') {
+            // if (!abi) throw new Error('ABI is required');
+            // if (!selectedFunction) throw new Error('Function is required');
+            // if (!contractAddress) throw new Error('Contract address is required');
 
+            try {
                 parsedAbi = JSON.parse(abi);
                 const fn = parsedAbi.find((item: any) => item.type === 'function' && item.name === selectedFunction);
                 if (!fn) throw new Error('Selected function not found in ABI');
 
                 // Build args array in order
                 orderedArgs = fn.inputs.map((input: any) => args[input.name] || args[input.type] || '');
-                toAddress = contractAddress as `0x${string}`;
-
-            }
-
-            const account = client.account?.address;
-            const fromAddress = (from || account) as `0x${string}`;
-            console.log({ fromAddress });
-            if (!fromAddress) throw new Error('From address is required');
-            console.log({ to });
-            console.log({ contractAddress });
-            toAddress = to as `0x${string}`;
-            console.log({ toAddress });
-            if (!toAddress) throw new Error("To address is required");
-
-            const tx: TxSimulationParams = {
-                from: fromAddress,
-                to: toAddress,
-                data: contractAddress ? encodeFunctionData({
+                const toAddress = contractAddress as `0x${string}`;
+                setTo(toAddress);
+                return encodeFunctionData({
                     abi: parsedAbi,
                     functionName: selectedFunction,
                     args: orderedArgs,
-                }) : '0x',
-                value: value ? numberToHex(parseEther(value)) : undefined,
-                gas: gasLimit ? numberToHex(BigInt(gasLimit)) : undefined,
-            };
+                })
+            } catch (e) {
+                setError("Failed to encode arguments. Ensure JSON array matches function inputs.");
+                return undefined;
+            }
 
-            console.log({ tx });
-            const block: BlockTag | `0x${string}` = usePendingBlock ? 'pending' : blockNumber ? numberToHex(BigInt(blockNumber)) : 'latest';
-            console.log({ block });
+        } else return "0x";
+    };
+
+    const currentTx = useMemo(() => {
+        const data = buildCalldata();
+        return {
+            from: fromAddr,
+            to,
+            data,
+            value: toHexWei(value),
+            gas: toHexQty(gasLimit),
+            gasPrice: toHexQty(gasPrice),
+            maxFeePerGas: toHexQty(maxFeePerGas),
+            maxPriorityFeePerGas: toHexQty(maxPriorityFeePerGas),
+            nonce: toHexQty(nonce),
+            accessList: accessList ?? undefined,
+        } as any;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fromAddr, to, abi, selectedFunction, args, value, gasLimit, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, accessList]);
+
+    const blockTag: BlockTag | `0x${string}` = usePendingBlock ? 'pending' : blockNumber ? numberToHex(BigInt(blockNumber)) : 'latest';
+    // console.log({ blockTag });
+
+    // Action: Create Access List
+    const createAccessList = async () => {
+        setError(null);
+        setDecodedResult(null);
+        setRevertInfo(null);
+        if (!provider) return;
+        try {
+            const params: any[] = [
+                { ...currentTx },
+                blockTag || "latest",
+            ];
+            // Some nodes accept 3rd param for state overrides; we try to include it only if defined
+            const so = buildStateOverrides();
+            if (so) params.push(so);
+
+            const res = await (provider as any).send("eth_createAccessList", params);
+            setAccessList(res?.accessList || res);
+            setAccessListUnsupported(false);
+        } catch (e: any) {
+            setAccessListUnsupported(true);
+            setError(e?.message || String(e));
+        }
+    };
+
+
+    // Bundle: add current built tx
+    const addToBundle = () => {
+        const data = buildCalldata();
+        const label = selectedFunction || "custom";
+        if (!to) return alert("Missing `to` address");
+        setBundle(b => [...b, { label, to, data, value: toHexWei(value) }]);
+    };
+
+
+    const runBundle = async () => {
+        if (!provider) return;
+        const so = buildStateOverrides();
+        const results: Array<BundleResults> = [];
+        for (let i = 0; i < bundle.length; i++) {
+            const tx = bundle[i];
+            try {
+                const params: any[] = [{ from, to: tx.to, data: tx.data, value: tx.value }, blockTag || "latest"];
+                if (so) params.push(so);
+                const res: string = await (provider as any).send("eth_call", params);
+                results.push({ index: i, ok: true, result: res });
+            } catch (e: any) {
+                results.push({ index: i, ok: false, error: e?.message || String(e) });
+            }
+        }
+        alert("Bundle run finished. Open console for details.");
+        console.log("Bundle results", results);
+    };
+
+    // Simulate Transaction
+    const handleSimulate = async () => {
+        setIsSimulating(true);
+        setResults(null);
+        setError(null);
+        setDecodedResult(null);
+        setRevertInfo(null);
+        setCallResult(null);
+        setGasEstimate(null);
+        if (!provider) return;
+
+        const so = buildStateOverrides();
+
+        try {
+            if (!client) throw new Error('Wallet not connected');
+
+            // eth_call
+            const params: any[] = [{ ...currentTx }, blockTag || "latest"];
+            if (so) params.push(so);
+            const result: string = await (provider as any).send("eth_call", params);
+            setCallResult(result);
+
+            // try decode
+            if (iface && selectedFunction) {
+                try {
+                    const decoded = iface.decodeFunctionResult(selectedFunction, result);
+                    setDecodedResult(Array.from(decoded).map((v: any) => (typeof v === "bigint" ? v.toString() : v)));
+                } catch { }
+            }
+
+            // estimateGas
+            try {
+                const gasParams: any = { ...currentTx };
+                const gas = await provider.estimateGas(gasParams);
+                setGasEstimate(gas.toString());
+            } catch (eg: any) {
+                // estimateGas can throw on reverts; show message
+                setGasEstimate(null);
+            }
+
+            // const account = client.account?.address;
+            // const fromAddress = (fromAddr || account) as `0x${string}`;
+            // console.log({ fromAddress });
+            // if (!fromAddress) throw new Error('From address is required');
+            // console.log({ to });
+            // console.log({ contractAddress });
+            // toAddress = to as `0x${string}`;
+            // console.log({ toAddress });
+            // if (!toAddress) throw new Error("To address is required");
+
+            // const tx = {
+            //     from: fromAddress,
+            //     to: toAddress,
+            //     data: buildCalldata(),
+            //     value: value ? numberToHex(parseEther(value)) : undefined,
+            //     gas: gasLimit ? numberToHex(BigInt(gasLimit)) : undefined,
+            //     // gasPrice: gasPrice === "auto" ? undefined : gasPrice,
+            //     nonce: nonce ? numberToHex(BigInt(nonce)) : undefined,
+            // };
+
+            // console.log({ tx });
+
+            // const payload = {
+            //     jsonrpc: "2.0",
+            //     id: 1,
+            //     method: "eth_call",
+            //     params: [
+            //         tx,
+            //         blockTag,
+            //     ],
+            // };
 
             // 🔧 Real Simulation: debug_traceCall
-            let res: { jsonrpc: string, id: string, result: string };
-            const result = await client.request({
-                jsonrpc: "2.0",
-                id: 1,
-                method: "eth_call", //replace with debug_traceCall
-                params: [tx, block],
-            }
-            );
-            console.log({ result });
 
-            const accessListResult = await client.request({
-                method: 'eth_createAccessList',
-                params: [tx, block],
-            })
-            if (typeof accessListResult === 'object' && 'accessList' in accessListResult!) {
-                setAccessList(accessListResult.accessList);
-                setGasUsed(accessListResult.gasUsed);
-                console.log({ accessList, gasUsed });
-            }
+            // const res = await fetch(rpcUrl, {
+            //     method: "POST",
+            //     headers: { "Content-Type": "application/json" },
+            //     body: JSON.stringify(payload),
+            // });
 
+            // const json = await res.json();
 
-            setResults({
-                gasUsed,
-                status: 'success',
-                result,
-                accessList,
-                block: block === 'pending' ? 'pending' : typeof block === 'number' ? block : 'latest',
-            });
+            // if (json.error) {
+            //     setResults({
+            //         success: false,
+            //         gasUsed: "0",
+            //         logs: [],
+            //         error: json.error.message,
+            //     });
+            // } else {
+            //     setResults({
+            //         success: true,
+            //         gasUsed: json.result?.gasUsed || "n/a",
+            //         // accessList,
+            //         logs: json.result?.logs || [],
+            //     });
+            // }
         } catch (err: any) {
+            const msg = err?.error?.data || err?.data || err?.message || String(err);
+            setError(typeof msg === "string" ? msg : JSON.stringify(msg));
+            // attempt revert decoding if hex data present
+            const hex = typeof err?.data === "string" ? err.data : (typeof err?.error?.data === "string" ? err.error.data : "");
+            if (hex?.startsWith("0x")) {
+                const r = tryDecodeRevert(hex);
+                if (r) setRevertInfo(r);
+            }
             setError(err.message || 'Simulation failed');
+            setResults({
+                success: false,
+                gasUsed: "0",
+                logs: [],
+                error: err.message,
+            });
         } finally {
             setIsSimulating(false);
         }
     };
+    // setResults({
+    //     gasUsed,
+    //     status: ,
+    //     results,
+    //     accessList,
+    //     block: Lock === 'pending' ? 'pending' : typeof Lock === 'number' ? Lock : 'latest',
+    // });
 
     // Hydration-safe rendering
     if (!isClient) {
@@ -373,7 +554,7 @@ export default function CustomSimulationPage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
-            <Header />
+            <Header from={from!}/>
             <div className="bg-bg-main bg-cover bg-center bg-no-repeat h-[calc(100vh-4rem)]">
                 <main className="container mx-auto px-4 py-8 h-full">
                     <h1 className="text-2xl font-semibold mb-6">New Custom Simulation</h1>
@@ -565,8 +746,18 @@ export default function CustomSimulationPage() {
                                 <label className="text-sm font-medium">From Address</label>
                                 <Input
                                     placeholder="0x..."
-                                    value={from}
-                                    onChange={(e) => setFrom(e.target.value)}
+                                    value={fromAddr}
+                                    onChange={(e) => setFromAddr(e.target.value)}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-sm font-medium">Nonce</label>
+                                <Input
+                                    type="number"
+                                    value={nonce}
+                                    onChange={(e) => setNonce(e.target.value)}
+                                    placeholder="e.g. 10"
                                 />
                             </div>
 
@@ -585,7 +776,7 @@ export default function CustomSimulationPage() {
                                     type="number"
                                     value={gasLimit}
                                     onChange={(e) => setGasLimit(e.target.value)}
-                                    placeholder="e.g. 3000000"
+                                    placeholder="e.g. 21000"
                                 />
                             </div>
                             <div>
@@ -598,7 +789,22 @@ export default function CustomSimulationPage() {
                                     placeholder="e.g. 10"
                                 />
                             </div>
-
+                            <div>
+                                <label className="text-sm font-medium">Max Priority Fee</label>
+                                <Input
+                                    value={maxPriorityFeePerGas}
+                                    onChange={e => setMaxPriorityFeePerGas(e.target.value)}
+                                    placeholder="wei or 0x.."
+                                />
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium">Max Fee Per Gas</label>
+                                <Input
+                                    placeholder="wei or 0x.."
+                                    value={maxFeePerGas}
+                                    onChange={e => setMaxFeePerGas(e.target.value)}
+                                />
+                            </div>
                             <div>
                                 <label className="text-sm font-medium">Value (ETH)</label>
                                 <Input
@@ -606,6 +812,127 @@ export default function CustomSimulationPage() {
                                     placeholder="0"
                                     value={value}
                                     onChange={(e) => setValue(e.target.value)}
+                                />
+                            </div>
+
+                            {/* State Overrides */}
+                            <div>
+                                <label className="text-sm font-medium">State Overrides (experimental)</label>
+                                <div className="mt-2 space-y-2">
+                                    {overrides.map((o, idx) => (
+                                        <div key={idx} className="p-3 rounded-xl border grid grid-cols-1 md:grid-cols-4 gap-2">
+                                            <input className="p-2 border rounded-lg md:col-span-2" placeholder="Address 0x..." value={o.address} onChange={e => setOverrides(arr => arr.map((x, i) => i === idx ? { ...x, address: e.target.value } : x))} />
+                                            <input className="p-2 border rounded-lg" placeholder="Balance (ETH or 0x..)" value={o.balance ?? ""} onChange={e => setOverrides(arr => arr.map((x, i) => i === idx ? { ...x, balance: e.target.value } : x))} />
+                                            <div className="flex items-center justify-end">
+                                                <button className="p-2 rounded-lg border" onClick={() => setOverrides(arr => arr.filter((_, i) => i !== idx))}><Trash2 size={16} /></button>
+                                            </div>
+                                            <textarea className="p-2 border rounded-lg md:col-span-4" placeholder="Code bytecode 0x... (optional)" value={o.code ?? ""} onChange={e => setOverrides(arr => arr.map((x, i) => i === idx ? { ...x, code: e.target.value } : x))} />
+                                            <div className="md:col-span-4">
+                                                <div className="text-xs text-gray-500 mb-1">Storage Slots</div>
+                                                {(o.storage ?? []).map((s, j) => (
+                                                    <div key={j} className="grid grid-cols-2 gap-2 mb-2">
+                                                        <input className="p-2 border rounded-lg" placeholder="key (0x..)" value={s.key} onChange={e => setOverrides(arr => arr.map((x, i) => i === idx ? { ...x, storage: (x.storage ?? []).map((y, k) => k === j ? { ...y, key: e.target.value } : y) } : x))} />
+                                                        <input className="p-2 border rounded-lg" placeholder="value (0x..)" value={s.value} onChange={e => setOverrides(arr => arr.map((x, i) => i === idx ? { ...x, storage: (x.storage ?? []).map((y, k) => k === j ? { ...y, value: e.target.value } : y) } : x))} />
+                                                    </div>
+                                                ))}
+                                                <button className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border" onClick={() => setOverrides(arr => arr.map((x, i) => i === idx ? { ...x, storage: [...(x.storage ?? []), { key: "0x", value: "0x" }] } : x))}><Plus size={14} /> Add Slot</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setOverrides(arr => [...arr, { address: "0x", storage: [] }])}
+                                    >
+                                        <Plus size={10} /> Add Account Override
+                                    </Button>
+                                    {/* <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border" ><Plus size={10} /> Add Account Override</button> */}
+                                    {stateOverrideUnsupported && <p className="text-xs text-amber-700">State overrides not supported by node.</p>}
+                                </div>
+                            </div>
+
+                            {/* Access List */}
+                            <div>
+                                <label className="text-sm font-medium">Optional Access Lists</label>
+                                <div className="mt-2 space-y-2">
+                                    {accessList.map((item, index) => (
+                                        <div key={index} className="flex gap-2">
+                                            <Input
+                                                placeholder="Contract address"
+                                                value={item.address}
+                                                onChange={(e) => {
+                                                    const newAccessList = [...accessList];
+                                                    newAccessList[index].address = e.target.value;
+                                                    setAccessList(newAccessList);
+                                                }}
+                                            />
+                                            <Input
+                                                placeholder="Storage key"
+                                                value={item.storageKeys.join(',')}
+                                                onChange={(e) => {
+                                                    const keys = e.target.value.split(',').map(k => k.trim());
+                                                    const newAccessList = [...accessList];
+                                                    newAccessList[index].storageKeys = keys;
+                                                    setAccessList(newAccessList);
+                                                }}
+                                            />
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                    const newAccessList = accessList.filter((_, i) => i !== index);
+                                                    setAccessList(newAccessList);
+                                                }}
+                                            >
+                                                <Trash2 size={14} />
+                                            </Button>
+                                        </div>
+                                    ))}
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setAccessList([...accessList, { address: '', storageKeys: [] }])}
+                                    >
+                                        <Plus size={10} /> Add Address to Access List
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Bundle Transactions */}
+                            <div>
+                                <label className="text-sm font-medium">Bundle (experimental, stateless)</label>
+                                <div className="space-y-2">
+                                    <div className="text-xs text-gray-600">Adds current call to a bundle (runs sequential eth_call at the same block tag). Does not persist state between calls.</div>
+                                    <Button
+                                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={addToBundle}
+                                    >
+                                        <Plus size={10} /> Add Current To Bundle
+                                    </Button>
+                                    {!!bundle.length && (
+                                        <div className="space-y-2">
+                                            {bundle.map((b, i) => (
+                                                <div key={i} className="flex items-center justify-between p-2 rounded-lg border text-xs">
+                                                    <div className="truncate">#{i + 1} – {b.label} → {b.to}</div>
+                                                    <button className="p-1" onClick={() => setBundle(arr => arr.filter((_, idx) => idx !== i))}><Trash2 size={14} /></button>
+                                                </div>
+                                            ))}
+                                            <button className="px-3 py-2 rounded-lg bg-gray-900 text-white text-sm" onClick={runBundle}>Run Bundle</button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Contract Code Editing */}
+                            <div>
+                                <label className="text-sm font-medium">Contract Code (Bytecode)</label>
+                                <Textarea
+                                    placeholder="0x..."
+                                    value={contractCode}
+                                    onChange={(e) => setContractCode(e.target.value)}
+                                    rows={4}
                                 />
                             </div>
                         </CardContent>
@@ -629,7 +956,24 @@ export default function CustomSimulationPage() {
                     </div>
 
                     {/* Results */}
-                    {error && (
+                    {results && (
+                        <div className="mt-6 p-4 border rounded bg-gray-50">
+                            <h3 className="font-bold">
+                                Simulation {results.success ? "Success ✅" : "Failed ❌"}
+                            </h3>
+                            <p><b>Gas Used:</b> {results.gasUsed}</p>
+                            {results.error && <p className="text-red-500"><b>Error:</b> {results.error}</p>}
+                            {results.logs.length > 0 && (
+                                <div>
+                                    <b>Logs:</b>
+                                    <pre className="text-xs bg-black text-green-400 p-2 rounded">
+                                        {JSON.stringify(results.logs, null, 2)}
+                                    </pre>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    {/* {error && (
                         <Card className="bg-red-50 border-red-200 mb-6">
                             <CardContent className="p-4">
                                 <p className="text-red-700"><strong>Error:</strong> {error}</p>
@@ -648,7 +992,7 @@ export default function CustomSimulationPage() {
                                 </pre>
                             </CardContent>
                         </Card>
-                    )}
+                    )} */}
                 </main>
             </div>
         </div >

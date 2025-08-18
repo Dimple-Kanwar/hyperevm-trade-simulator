@@ -1,10 +1,20 @@
-import { parseAbi } from "viem";
+// RPC URLs
+// export const RPC_URLS = {
+//   mainnet: `https://hyperliquid-mainnet.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY}`,
+//   testnet: "https://spectrum-01.simplystaking.xyz/hyperliquid-tn-rpc/evm", // Verified on Purrsec
+// };
 
-export const NFT_CONTRACT_ADDRESS =
-  "0x6D1BaA7951f26f600b4ABc3a9CF8F18aBf36fac1";
+export const CHAINS = {
+  mainnet: {
+    id: 999,
+    name: "HyperEVM Mainnet",
+    rpcUrl: `https://hyperliquid-mainnet.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY}`,
+  },
+  testnet: {
+    id: 998,
+    name: "HyperEVM Testnet",
+    rpcUrl: "https://spectrum-01.simplystaking.xyz/hyperliquid-tn-rpc/evm",
+  },
+} as const;
 
-export const NFT_MINTABLE_ABI_PARSED = parseAbi([
-  "function mintTo(address recipient) returns (uint256)",
-  "function baseURI() view returns (string)",
-  "function balanceOf(address owner) view returns (uint256)",
-] as const);
+export type NetworkKey = keyof typeof CHAINS; // "mainnet" | "testnet"

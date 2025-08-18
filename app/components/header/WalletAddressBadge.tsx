@@ -5,12 +5,18 @@ import { formatAddress } from "@/lib/utils";
 import { useUser } from "@account-kit/react";
 import { useState } from "react";
 import { config } from "@/config";
+import { useNetwork } from "@/app/context/Network-Context";
 
-export function WalletAddressBadge() {
+interface Props {
+  from: string
+}
+export function WalletAddressBadge({ from }: Props) {
   const [isCopied, setIsCopied] = useState(false);
   const user = useUser();
+  const { network } = useNetwork();
+
   const client = config._internal.wagmiConfig.getClient();
-  const address = user?.address;
+  const address = network == "mainnet" ? user?.address : from;
   // console.log({ address });
   const chain = client.chain;
 
@@ -21,25 +27,20 @@ export function WalletAddressBadge() {
     setTimeout(() => setIsCopied(false), 2000);
   };
 
-  // const openExplorer = () => {
-  //   if (address && chain?.blockExplorers?.default?.url) {
-  //     window.open(`${chain.blockExplorers.default.url}/address/${address}`, "_blank");
-  //   }
-  // };
   // Determine network
-  const isMainnet = client?.chain?.id === 999;
-  const isTestnet = client?.chain?.id === 998;
+  // const isMainnet = client?.chain?.id === 999;
+  // const isTestnet = client?.chain?.id === 998;
 
-  let networkLabel = "Unknown Network";
-  let networkColor = "bg-gray-500";
+  // let networkLabel = "Unknown Network";
+  // let networkColor = "bg-gray-500";
 
-  if (isMainnet) {
-    networkLabel = "HYPE Mainnet";
-    networkColor = "bg-green-500";
-  } else if (isTestnet) {
-    networkLabel = "HYPE Testnet";
-    networkColor = "bg-yellow-500";
-  }
+  // if (isMainnet) {
+  //   networkLabel = "HYPE Mainnet";
+  //   networkColor = "bg-green-500";
+  // } else if (isTestnet) {
+  //   networkLabel = "HYPE Testnet";
+  //   networkColor = "bg-yellow-500";
+  // }
 
   if (!address) return null;
 
@@ -67,12 +68,12 @@ export function WalletAddressBadge() {
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      {/* Network Badge */}
+      {/* Network Badge
       <span
         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${networkColor}`}
       >
         {networkLabel}
-      </span>
+      </span> */}
     </div>
 
   );

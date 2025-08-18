@@ -60,7 +60,7 @@ export default function LoginPage() {
               Log in
             </>
           ) : (
-            <>Login</>
+            <>Login with Alchemy Smart Wallet</>
           )}
         </Button>
       </CardContent>
