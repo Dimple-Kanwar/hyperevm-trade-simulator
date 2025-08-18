@@ -1,28 +1,98 @@
-import React, { useState } from 'react';
-import styles from './AccessListEditor.module.css';
+import { useState } from "react";
+import { Button } from "@/app/components/ui/button";
+import { Input } from "@/app/components/ui/Input";
+import { Plus, Trash2 } from "lucide-react";
 
-interface AccessEntry { address: string; storageKeys?: string[] }
-export default function AccessListEditor({ value, onChange } : { value?: AccessEntry[]; onChange: (v: AccessEntry[]) => void}) {
-  const [list, setList] = useState<AccessEntry[]>(value ?? []);
+export default function AccessListEditor({
+  accessList,
+  setAccessList,
+}: {
+  accessList: { address: string; storageKeys: string[] }[];
+  setAccessList: React.Dispatch<
+    React.SetStateAction<{ address: string; storageKeys: string[] }[]>
+  >;
+}) {
+  const [showAccessList, setShowAccessList] = useState(false);
 
-  const add = () => { const n = [...list, { address: '' }]; setList(n); onChange(n); }
-  const update = (idx:number, key: keyof AccessEntry, val:any) => {
-    const n = list.slice(); (n[idx] as any)[key] = val; setList(n); onChange(n);
-  }
-  const remove = (idx:number) => {
-    const n = list.slice(); n.splice(idx,1); setList(n); onChange(n);
+  if (!showAccessList) {
+    return (
+      <div className="mt-6 flex justify-center">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowAccessList(true)}
+        >
+          + Enable Access List
+        </Button>
+      </div>
+    );
   }
 
   return (
-    <div className={styles.wrapper}>
-      <label className={styles.label}>Optional Access Lists</label>
-      {list.map((l, i) => (
-        <div key={i} className={styles.row}>
-          <input className={styles.input} value={l.address} onChange={(e) => update(i, 'address', e.target.value)} placeholder="Contract address" />
-          <button className={styles.del} onClick={() => remove(i)}>x</button>
-        </div>
-      ))}
-      <button className={styles.add} onClick={add}>+ Add address to access list</button>
+    <div className="mt-6 p-4 border rounded-lg">
+      <div className="flex justify-between items-center mb-2">
+        <label className="text-sm font-medium">Optional Access Lists</label>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowAccessList(false)}
+        >
+          ✕ Close
+        </Button>
+      </div>
+
+      <div className="mt-2 space-y-2">
+        {accessList.map((item, index) => (
+          <div key={index} className="flex gap-2">
+            <Input
+              placeholder="Contract address"
+              value={item.address}
+              onChange={(e: { target: { value: string; }; }) => {
+                const newAccessList = [...accessList];
+                newAccessList[index].address = e.target.value;
+                setAccessList(newAccessList);
+              }}
+            />
+            <Input
+              placeholder="Storage key (comma-separated)"
+              value={item.storageKeys.join(",")}
+              onChange={(e: { target: { value: string; }; }) => {
+                const keys = e.target.value
+                  .split(",")
+                  .map((k: string) => k.trim());
+                const newAccessList = [...accessList];
+                newAccessList[index].storageKeys = keys;
+                setAccessList(newAccessList);
+              }}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const newAccessList = accessList.filter(
+                  (_, i) => i !== index
+                );
+                setAccessList(newAccessList);
+              }}
+            >
+              <Trash2 size={14} />
+            </Button>
+          </div>
+        ))}
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            setAccessList([
+              ...accessList,
+              { address: "", storageKeys: [] },
+            ])
+          }
+        >
+          <Plus size={10} /> Add Address to Access List
+        </Button>
+      </div>
     </div>
   );
 }

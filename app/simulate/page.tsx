@@ -21,6 +21,10 @@ import { useSearchParams } from 'next/navigation';
 import { CHAINS } from '@/lib/constants';
 import SimulationResults from '@/app/components/simulator/SimulationResults';
 import ContractEditor from '../components/simulator/ContractEditor';
+import BundleSimulator from '../components/simulator/BundleSimulator';
+import BundleTransactions from '../components/simulator/BundleSimulator';
+import StateOverrides from '../components/simulator/StateOverridesEditor';
+import AccessListEditor from '../components/simulator/AccessListEditor';
 
 export default function CustomSimulationPage() {
     const { network } = useNetwork();
@@ -88,6 +92,8 @@ export default function CustomSimulationPage() {
     // bundle
     type BuiltTx = { label: string; to: string; data?: string; value?: string };
     const [bundle, setBundle] = useState<BuiltTx[]>([]);
+    const [bundleResults, setBundleResults] = useState<any[]>([]);
+
 
     const [contractCode, setContractCode] = useState('');
 
@@ -434,9 +440,10 @@ export default function CustomSimulationPage() {
                 results.push({ index: i, ok: false, error: e?.message || String(e) });
             }
         }
-        alert("Bundle run finished. Open console for details.");
+        setBundleResults(results);
         console.log("Bundle results", results);
     };
+
 
 
     // Shareable link: serialize inputs to URL hash
@@ -804,7 +811,8 @@ export default function CustomSimulationPage() {
 
 
                             {/* State Overrides */}
-                            <div>
+                            <StateOverrides overrides={overrides} setOverrides={setOverrides} />
+                            {/* <div>
                                 <label className="text-sm font-medium">State Overrides (experimental)</label>
                                 <div className="mt-2 space-y-2">
                                     {overrides.map((o, idx) => (
@@ -835,12 +843,13 @@ export default function CustomSimulationPage() {
                                         <Plus size={10} /> Add Account Override
                                     </Button>
                                     {/* <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border" ><Plus size={10} /> Add Account Override</button> */}
-                                    {stateOverrideUnsupported && <p className="text-xs text-amber-700">State overrides not supported by node.</p>}
-                                </div>
-                            </div>
+                            {/* {stateOverrideUnsupported && <p className="text-xs text-amber-700">State overrides not supported by node.</p>}
+                                </div> */}
+                            {/* </div> */}
 
                             {/* Access List */}
-                            <div>
+                            <AccessListEditor accessList={accessList} setAccessList={setAccessList} />
+                            {/* <div>
                                 <label className="text-sm font-medium">Optional Access Lists</label>
                                 <div className="mt-2 space-y-2">
                                     {accessList.map((item, index) => (
@@ -884,9 +893,15 @@ export default function CustomSimulationPage() {
                                         <Plus size={10} /> Add Address to Access List
                                     </Button>
                                 </div>
-                            </div>
+                            </div> */}
+                            <BundleTransactions
+                                bundle={bundle}
+                                setBundle={setBundle}
+                                addToBundle={addToBundle}
+                                runBundle={runBundle}
+                            />
 
-                            {/* Bundle Transactions */}
+                            {/* Bundle Transactions
                             <div>
                                 <label className="text-sm font-medium">Bundle (experimental, stateless)</label>
                                 <div className="space-y-2">
@@ -911,26 +926,13 @@ export default function CustomSimulationPage() {
                                         </div>
                                     )}
                                 </div>
-                            </div>
-
-                            {/* Contract Code Editing */}
-                            <div>
-                                <label className="text-sm font-medium">Contract Code (Bytecode)</label>
-                                <Textarea
-                                    placeholder="0x..."
-                                    value={contractCode}
-                                    onChange={(e) => setContractCode(e.target.value)}
-                                    rows={4}
-                                />
-                            </div>
+                            </div> */}
+                            {/* Contract Editor toggle (hidden by default) */}
+                            <ContractEditor />
                         </CardContent>
                     </Card>
 
-                    {/* <div className="flex gap-2">
 
-                        {/* <button onClick={handleSimulate} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm"><Rocket size={16} /> Simulate</button> */}
-
-                    {/* </div>  */}
 
                     {/* Simulate Button */}
                     <div className="flex justify-end mb-6 gap-2">
@@ -1005,11 +1007,7 @@ export default function CustomSimulationPage() {
 
                     <div className="container mx-auto px-4 py-6">
                         <h1 className="text-2xl font-bold mb-6">Transaction Simulation</h1>
-
-                        {/* Contract Editor toggle (hidden by default) */}
-                        <ContractEditor />
-
-                        {/* Always visible results */}
+                        {/* Simulation results */}
                         <SimulationResults
                             result={{
                                 status: "success",
@@ -1018,28 +1016,11 @@ export default function CustomSimulationPage() {
                                 logs: [],
                                 trace: [{ op: "CALL", gas: 21000 }],
                             }}
+                            bundleResults={bundleResults}
                         />
-                    </div>
-                    {/* {error && (
-                        <Card className="bg-red-50 border-red-200 mb-6">
-                            <CardContent className="p-4">
-                                <p className="text-red-700"><strong>Error:</strong> {error}</p>
-                            </CardContent>
-                        </Card>
-                    )}
 
-                    {results && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Simulation Results</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <pre className="p-3 bg-gray-100 dark:bg-gray-800 rounded text-xs overflow-auto">
-                                    {JSON.stringify(results, null, 2)}
-                                </pre>
-                            </CardContent>
-                        </Card>
-                    )} */}
+                    </div>
+
                 </main>
             </div>
         </div >
