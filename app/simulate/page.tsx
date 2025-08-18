@@ -21,22 +21,22 @@ import { useSearchParams } from 'next/navigation';
 import { CHAINS } from '@/lib/constants';
 import SimulationResults from '@/app/components/simulator/SimulationResults';
 import ContractEditor from '../components/simulator/ContractEditor';
-import BundleSimulator from '../components/simulator/BundleSimulator';
 import BundleTransactions from '../components/simulator/BundleSimulator';
 import StateOverrides from '../components/simulator/StateOverridesEditor';
 import AccessListEditor from '../components/simulator/AccessListEditor';
+import { mockContractBundleSimulationResult, mockERC20SimulationResult, mockSimulationResult, mockTransactionBundle } from '../mocks/simulationMockResults';
 
 export default function CustomSimulationPage() {
     const { network } = useNetwork();
     const chain = CHAINS[network];
     const rpcUrl = chain.rpcUrl
-
+    console.log({ rpcUrl });
+    console.log({ network });
     const [provider, setProvider] = useState<ethers.JsonRpcProvider | null>(null);
 
     useEffect(() => {
         setProvider(new ethers.JsonRpcProvider(rpcUrl));
     }, [network]);
-
 
     const searchParams = useSearchParams();
     const from = searchParams.get("from") || "";
@@ -74,7 +74,7 @@ export default function CustomSimulationPage() {
     const [gasPrice, setGasPrice] = useState('');
     const [maxFeePerGas, setMaxFeePerGas] = useState<string>("");
     const [maxPriorityFeePerGas, setMaxPriorityFeePerGas] = useState<string>("");
-    const [nonce, setNonce] = useState('');
+    const [nonce, setNonce] = useState<number>();
     const [usePendingBlock, setUsePendingBlock] = useState(true);
     const [blockNumber, setBlockNumber] = useState<string>('');
     const [currentBlock, setCurrentBlock] = useState<number | null>(null);
@@ -95,12 +95,9 @@ export default function CustomSimulationPage() {
     const [bundleResults, setBundleResults] = useState<any[]>([]);
 
 
-    const [contractCode, setContractCode] = useState('');
-
-
     // Create public client for network calls
     const client = config._internal.wagmiConfig.getClient();
-
+    console.log({ client });
     // Fetch current block number
     useEffect(() => {
         if (!client) return;
@@ -132,7 +129,7 @@ export default function CustomSimulationPage() {
 
     // Fetch gas price
     useEffect(() => {
-        if (!client || !client?.account?.address) return;
+        if (!client || !client?.account?.address || fromAddr) return;
 
         const fetchGasPrice = async () => {
             try {
@@ -366,7 +363,7 @@ export default function CustomSimulationPage() {
             gasPrice: toHexQty(gasPrice),
             maxFeePerGas: toHexQty(maxFeePerGas),
             maxPriorityFeePerGas: toHexQty(maxPriorityFeePerGas),
-            nonce: toHexQty(nonce),
+            nonce: nonce,
             accessList: accessList ?? undefined,
         } as any;
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -445,34 +442,20 @@ export default function CustomSimulationPage() {
     };
 
 
+    // Reset block number if user unchecks and no value
+    // useEffect(() => {
+    //     if (provider) {
+    //         console.log("y")
+    //         const baseFee = provider.getBlock("latest").then(block => block?.baseFeePerGas);
+    //         const maxPriorityFee = ethers.parseUnits("2", "gwei");
+    //         setMaxPriorityFeePerGas(maxPriorityFee.toString());
+    //         const maxFee = parseInt(String(baseFee!)) * (2) + Number(maxPriorityFee); // typical safety margin
+    //         setMaxFeePerGas(maxFee.toString());
+    //     }
+    //     console.log("n")
+    // }, [maxPriorityFeePerGas, maxFeePerGas]);
 
-    // Shareable link: serialize inputs to URL hash
-    const copyShareLink = async () => {
-        const payload = {
-            network,
-            from,
-            to,
-            abi,
-            selectedFunction,
-            args,
-            value,
-            blockTag,
-            gasLimit,
-            gasPrice,
-            maxFeePerGas,
-            maxPriorityFeePerGas,
-            nonce,
-            accessList,
-            overrides,
-            bundle,
-        };
-        const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-        const url = `${window.location.origin}${window.location.pathname}#${b64}`;
-        await navigator.clipboard.writeText(url);
-        alert("Shareable link copied to clipboard!");
-    };
-
-
+    // console.log({ maxPriorityFeePerGas, maxFeePerGas })
     // Simulate Transaction
     const handleSimulate = async () => {
         setIsSimulating(true);
@@ -485,21 +468,49 @@ export default function CustomSimulationPage() {
         if (!provider) return;
 
         const so = buildStateOverrides();
-
+        console.log({ so });
         try {
-            if (!client) throw new Error('Wallet not connected');
 
-            // 🔧 Real Simulation: debug_traceCall
-            // eth_call
-            const params: any[] = [{ ...currentTx }, blockTag || "latest"];
-            if (so) params.push(so);
-            const result: string = await (provider as any).send("eth_call", params);
-            setCallResult(result);
+            // Build state overrides if needed
+            const stateOverrides = buildStateOverrides();
+
+            // Prepare transaction object
+            const tx: any = {
+                ...currentTx,
+                accessList: currentTx.accessList || [],
+                stateOverrides
+            };
+
+            // 🔹 Auto-set realistic fees
+            const latestBlock = await provider.getBlock("latest");
+            const baseFee = latestBlock!.baseFeePerGas || ethers.parseUnits("1", "gwei");
+            const priorityFee = ethers.parseUnits("2", "gwei"); // 2 Gwei tip
+
+            tx.maxPriorityFeePerGas = priorityFee;
+            tx.maxFeePerGas = baseFee * BigInt(2) + (priorityFee); // 2x base fee + tip
+
+            console.log("Simulating transaction with fees:", {
+                maxFeePerGas: tx.maxFeePerGas.toString(),
+                maxPriorityFeePerGas: tx.maxPriorityFeePerGas.toString(),
+            });
+            // 🔧 Use debug_traceCall for full simulation
+            const traceParams: any[] = [
+                tx,
+                blockTag || "latest",
+                { tracer: "callTracer", stateOverride: stateOverrides },
+            ];
+
+            const traceResult: any = await provider.send("debug_traceCall", traceParams);
+            console.log("Trace Result:", traceResult);
+
+            // Extract gasUsed
+            const gasUsed = traceResult?.gas || "0";
+
 
             // try decode
             if (iface && selectedFunction) {
                 try {
-                    const decoded = iface.decodeFunctionResult(selectedFunction, result);
+                    const decoded = iface.decodeFunctionResult(selectedFunction, results);
                     setDecodedResult(Array.from(decoded).map((v: any) => (typeof v === "bigint" ? v.toString() : v)));
                 } catch { }
             }
@@ -750,7 +761,7 @@ export default function CustomSimulationPage() {
                                 <Input
                                     type="number"
                                     value={nonce}
-                                    onChange={(e) => setNonce(e.target.value)}
+                                    onChange={(e) => setNonce(Number(e.target.value))}
                                     placeholder="e.g. 10"
                                 />
                             </div>
@@ -932,8 +943,6 @@ export default function CustomSimulationPage() {
                         </CardContent>
                     </Card>
 
-
-
                     {/* Simulate Button */}
                     <div className="flex justify-end mb-6 gap-2">
                         <button onClick={createAccessList} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800 text-white text-sm"><Settings size={16} /> Create Access List</button>
@@ -1008,16 +1017,18 @@ export default function CustomSimulationPage() {
                     <div className="container mx-auto px-4 py-6">
                         <h1 className="text-2xl font-bold mb-6">Transaction Simulation</h1>
                         {/* Simulation results */}
-                        <SimulationResults
-                            result={{
-                                status: "success",
-                                gasUsed: "280000",
-                                blockNumber: "123456",
-                                logs: [],
-                                trace: [{ op: "CALL", gas: 21000 }],
-                            }}
-                            bundleResults={bundleResults}
-                        />
+                        {simulationType == "contract" ? (
+                            <SimulationResults
+                                result={mockERC20SimulationResult}
+                                // bundleResults={mockContractBundleSimulationResult}
+                            />
+                        ) : (
+                            <SimulationResults
+                                result={mockSimulationResult}
+                                // bundleResults={mockTransactionBundle}
+                            />
+                        )}
+
 
                     </div>
 

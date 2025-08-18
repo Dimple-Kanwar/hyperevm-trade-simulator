@@ -1,6 +1,6 @@
 // hyperEVMProvider.ts
 import { ethers } from "ethers";
-import { RPC_URLS } from "./constants";
+import { CHAINS } from "./constants";
 
 // Environment variables (set in .env.local)
 const ALCHEMY_API_KEY =
@@ -8,8 +8,6 @@ const ALCHEMY_API_KEY =
 if (!ALCHEMY_API_KEY) {
   throw new Error("NEXT_PUBLIC_ALCHEMY_API_KEY is not set");
 }
-
-
 
 // Chain IDs
 export const CHAIN_IDS = {
@@ -27,7 +25,7 @@ export class HyperEVMProvider {
   isMainnet: boolean;
 
   constructor(network: "mainnet" | "testnet" = "mainnet") {
-    const url = RPC_URLS[network];
+    const url = CHAINS[network].rpcUrl;
     this.provider = new ethers.JsonRpcProvider(url);
     this.isMainnet = network === "mainnet";
   }
@@ -83,6 +81,7 @@ export class HyperEVMProvider {
       return { callResult, gasEstimate };
     } catch (err: any) {
       // Extract revert reason if possible
+      console.log(err);
       if (err.data) {
         try {
           const error = ethers.AbiCoder.defaultAbiCoder().decode(
@@ -154,3 +153,29 @@ export class HyperEVMProvider {
 
 const test = new HyperEVMProvider("testnet");
 console.log({ blockNum: await test.getBlockNumber() });
+const baseFee = await test.provider.getBlock("latest").then(block => block?.baseFeePerGas);
+const maxPriorityFee = ethers.parseUnits("2", "gwei");
+const maxFee = parseInt(String(baseFee!)) * (2) + Number(maxPriorityFee); // typical safety margin
+
+
+const fee = await test.getFeeData();
+console.log({fee});
+const tx = {
+  from: "0xc82306Ca37bbCb0C560608bD76F1fbeB360C411B",
+  to: "0x29231436e1872beDAaF2577b207E8a156547a6Ac",
+  data: "0x",
+  value: "0xde0b6b3a7640000",
+  gas: "0x5208",
+  maxFeePerGas: maxPriorityFee.toString(),
+  maxPriorityFeePerGas: maxPriorityFee.toString(),
+  nonce: 1,
+  accessList: [
+    {
+      address: "0x29231436e1872beDAaF2577b207E8a156547a6Ac",
+      storageKeys: [],
+    },
+  ],
+};
+
+const res = await test.simulateTransaction(tx);
+console.log({res});
