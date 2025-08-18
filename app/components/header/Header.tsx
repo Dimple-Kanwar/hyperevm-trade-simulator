@@ -25,7 +25,7 @@ export default function Header({ from }: Props) {
         {user_address ? (
           <div className="flex items-center gap-3">
             <UserInfoDisplay />
-            <BalanceDisplay />
+            {/* <BalanceDisplay /> */}
             <WalletAddressBadge from={from!} />
             <ThemeToggle isCollapsed={false} />
             <LogoutButton />
