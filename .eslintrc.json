@@ -7,7 +7,7 @@
     {
       "files": ["components/ui/**/*.{ts,tsx}"],
       "rules": {
-        "max-len": "off"
+        // "max-len": "off"
       }
     }
   ]
