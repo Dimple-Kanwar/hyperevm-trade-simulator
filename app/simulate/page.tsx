@@ -36,7 +36,7 @@ export default function CustomSimulationPage() {
 
     useEffect(() => {
         setProvider(new ethers.JsonRpcProvider(rpcUrl));
-    }, [network]);
+    }, [rpcUrl,network]);
 
     const searchParams = useSearchParams();
     const from = searchParams.get("from") || "";
@@ -149,7 +149,7 @@ export default function CustomSimulationPage() {
         }
 
         fetchGasPrice();
-    }, [client, client?.account?.address, gasPrice]);
+    }, [fromAddr,client, client?.account?.address, gasPrice]);
 
 
     // Set default from address
@@ -183,7 +183,7 @@ export default function CustomSimulationPage() {
     const [isClient, setIsClient] = useState(false);
     useEffect(() => {
         if (client) setIsClient(true);
-    }, []);
+    }, [client]);
 
     // Parse ABI and extract functions whenever ABI changes
     useEffect(() => {
@@ -568,7 +568,7 @@ export default function CustomSimulationPage() {
                     <Card className="mb-6">
                         <CardHeader>
                             <CardTitle>Simulation Type</CardTitle>
-                            <CardDescription>Choose what you'd like to simulate</CardDescription>
+                            <CardDescription>Choose what you`&apos`d like to simulate</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <RadioGroup

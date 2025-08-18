@@ -2,13 +2,14 @@ import { AccessList, Address, BlockTag, Hash, Quantity } from "viem";
 
 // reusable types across components
 export interface TxSimulationParams {
-  from: Address | undefined;
-  to: Address | undefined;
-  gas?: `0x${string}`;
-  value?: `0x${string}`;
+  gasPrice: string;
+  from: string | undefined;
+  to: `0x${string}` | undefined;
+  gas?: string;
+  value?: string;
   data?: Hash;
   nonce?: `0x${string}`;
-  blockTag?: BlockTag | `0x${string}`;
+  blockTag?: BlockTag | string;
   overrides?: any;
   accessList?: AccessList;
 }

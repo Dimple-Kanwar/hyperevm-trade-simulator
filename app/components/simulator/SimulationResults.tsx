@@ -65,9 +65,17 @@ function TxSummary({ result }: { result: SingleResult }) {
 }
 
 function GasAnalysis({ bundleResults }: { bundleResults?: SingleResult[] }) {
-    if (!bundleResults || bundleResults.length === 0) return null;
-
     const summary = useMemo(() => {
+        if (!bundleResults || bundleResults.length === 0) {
+            return {
+                total: 0,
+                successCount: 0,
+                failCount: 0,
+                totalGas: 0,
+                gasData: [],
+            };
+        }
+
         const total = bundleResults.length;
         const successCount = bundleResults.filter(r => r.status === "success").length;
         const failCount = total - successCount;
@@ -81,6 +89,9 @@ function GasAnalysis({ bundleResults }: { bundleResults?: SingleResult[] }) {
 
         return { total, successCount, failCount, totalGas, gasData };
     }, [bundleResults]);
+
+    // Early return for empty data (after useMemo)
+    if (!bundleResults || bundleResults.length === 0) return null;
 
     return (
         <div className="space-y-6">
@@ -130,6 +141,7 @@ function GasAnalysis({ bundleResults }: { bundleResults?: SingleResult[] }) {
         </div>
     );
 }
+
 
 function GasBreakdownChart() {
     return (
